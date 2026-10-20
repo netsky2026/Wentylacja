@@ -6,10 +6,11 @@
 
 :root, [data-theme="green"] {
   --bg: #0A0A0A; --card: #141414; --border: #262626; --text: #F5F5F7; --muted: #8E8E93;
-  --primary: #34A56A; --primary-rgb: 52,165,106; --on-primary: #0A0A0A; --primary-text: var(--primary-text);
+  --primary: #34A56A; --primary-rgb: 52,165,106; --on-primary: #0A0A0A; --primary-text: #d4f0e0;
   --accent: #FF3B30; --green: #30D158;
-  --surface: var(--surface); --surface2: #2a2f35; --grid: #222; --axis: #666; --off: #444; --frame: #4a4f55;
-  --nav-bg: var(--nav-bg); --glass: linear-gradient(160deg, #1d2a33 0%, #152029 100%); --thumb: var(--thumb);
+  --surface: #0d0d0d; --surface2: #2a2f35; --grid: #222; --axis: #666; --off: #444; --frame: #4a4f55;
+  --nav-bg: rgba(14,14,14,0.86); --glass: linear-gradient(160deg, #1d2a33 0%, #152029 100%); --thumb: #2a2a2a;
+  --warn-text: #c9a46a; --c-power: #c9a46a; --c-water: #7fa3b8; --c-co2: #b8a37f; --c-cl: #8a9bb0; --c-cr: #6f8a7a; --c-chim: #c9c9c9;
   color-scheme: dark;
 }
 [data-theme="blue"] {
@@ -30,6 +31,7 @@
   --accent: #D92D20; --green: #15803D;
   --surface: #F0F3F0; --surface2: #DFE6E0; --grid: #E3E7E4; --axis: #6B7280; --off: #c4c9c5; --frame: #7d858c;
   --nav-bg: rgba(255,255,255,0.92); --glass: linear-gradient(160deg, #cfe3ef 0%, #b9d3e3 100%); --thumb: #c9d0ca;
+  --warn-text: #8a6a2a; --c-power: #b07d1e; --c-water: #2f6f93; --c-co2: #8a6b2f; --c-cl: #4b5f7a; --c-cr: #3d6b52; --c-chim: #4b5563;
   color-scheme: light;
 }
 

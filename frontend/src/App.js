@@ -112,6 +112,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
 
   const brandClient = user.role === "superadmin" ? dev?.client_id : user.client_id;
   const loadBrand = useCallback(() => {
+    if (user.role === "superadmin" && !brandClient) return;
     const q = user.role === "superadmin" && brandClient ? `?client_id=${brandClient}` : "";
     axios.get(`${API}/branding${q}`).then(({ data }) => setBrand(data)).catch(() => {});
   }, [user.role, brandClient]);

@@ -1,0 +1,42 @@
+{
+  "summary": "Tested per-client branding (display name, default theme, logo stored in Object Storage) and per-user theme override, both backend and UI at 390x844. New pytest file tests/test_it12_branding.py: 17/17 pass. It covers PATCH /clients (trim, 422 for an invalid theme, 404, 403 for non-superadmin), logo upload (PNG/JPEG/WEBP accepted, resized to 256px PNG, 600x300 becomes 256x128; non-image or GIF gives 422; >1MB gives 413), logo GET (own client 200, other client 404, unauthenticated 401), DELETE logo, /branding (superadmin ?client_id; client users ignore the param), and PUT /auth/preferences (persists into /auth/me across logins, invalid value gives 422, unauthenticated 401). Regression tests test_multitenant.py and test_it11_reuse_ws.py: 17/17 pass. UI: superadmin branding follows the selected device (kowalski-a shows amber, 'Kowalski Wentylacja' and the 256px logo; chlodnia-01 shows green, fallback icon and 'Marco Polo Wentylacja'). theme-select override applies immediately and survives reload; choosing '' goes back to the client default. A Kowalski viewer sees the Kowalski logo, name and amber theme by default, no fleet card, picks light, and light persists after logout and login. Brand editor: name save, theme change, invalid file and >1MB file both show the error toast, valid upload shows the preview, remove brings back the fallback icon. Visual check of all 4 themes on Komory (manual sliders, curtain windows), Dane (charts), Ustawienia (fleet card, brand editor) and login: no horizontal overflow (scrollWidth 390). FOUND AND FIXED a bug in the green theme in index.css: 4 CSS variables pointed to themselves (--surface: var(--surface), and the same for --primary-text, --nav-bg, --thumb). That made them invalid, so in the green theme (the default) inputs, reg-cells, sensors, curtain windows, the bottom nav and the scrollbar had a transparent background. I restored the pre-theme values (#0d0d0d, #d4f0e0, rgba(14,14,14,0.86), #2a2a2a).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST/DELETE /api/clients/{id}/logo, DELETE /api/clients/{id}", "issue": "Replacing or removing a logo, or deleting a client, never deletes the old object from storage, so orphaned objects build up (soft delete is acceptable, but nothing tracks them)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "index.css green theme", "issue": "FIXED: self-referencing CSS vars (--surface, --primary-text, --nav-bg, --thumb) made surfaces and the bottom nav transparent in the default green theme", "selector": ":root,[data-theme=green]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Light theme (all screens)", "issues": [
+        "Hardcoded #c9a46a (gold) text has low contrast (about 2.3:1) on white cards: the 'RĘCZNY' mode badge (ChamberScreen.jsx:48), the heating label (ChamberScreen.jsx:35) and the alarm-mocked-banner text (AlarmRecipientsCard.jsx:49). Make it theme-aware, e.g. a var(--warn-text) that is darker (#8a6a2a) in light.",
+        "Dane chart 'Kurtyny/komin': the chimney line #c9c9c9 (DataView.jsx:103) is barely visible on white. The humidity/CO2 lines #7fa3b8/#b8a37f are also weak in light. Use per-theme chart colours."
+      ]},
+      {"screen": "Superadmin initial load", "issue_note": "", "issues": ["/api/branding is called twice without client_id before devices load, so the theme briefly shows green before switching to the selected device's client theme (small flash)"]}
+    ]
+  },
+  "test_report_links": ["/app/tests/test_it12_branding.py", "/app/tests/test_multitenant.py", "/app/tests/test_it11_reuse_ws.py", "/app/test_reports/pytest/it12_branding.xml"],
+  "action_items": [
+    "Review my index.css fix for the green theme vars (values taken from the commit before the themes were added)",
+    "Light theme: make the hardcoded #c9a46a gold text and the #c9c9c9 / pastel chart line colours theme-aware for contrast",
+    "Optional: delete old logo objects from storage when a logo is replaced or a client is deleted; skip the /branding call until devices have loaded for superadmin"
+  ],
+  "critical_code_review_comments": [
+    "index.css: when converting hardcoded colours to vars, a find/replace produced cyclic definitions in the green block. Fixed.",
+    "Toaster on the login screen is hardcoded to theme='dark' (App.js:31) even when the saved theme is light",
+    "server.py is 1156 lines; consider splitting the clients/branding routes into a module",
+    "BrandEditor's name state is initialised from props once; if the client data changes from elsewhere, the input won't resync (minor)"
+  ],
+  "updated_files": ["/app/frontend/src/index.css", "/app/tests/test_it12_branding.py"],
+  "success_rate": {"backend": "100% (34/34 incl. regression)", "frontend": "100% functional after CSS fix; 2 light-theme contrast design issues"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Temporary TEST_ clients and users were created and deleted. Final state: Ferma Kowalski display_name 'Kowalski Wentylacja', amber, logo 985bf926 (untouched); Marco Polo green, no logo; superadmin theme null; all chambers back on auto; login_attempts/alarm_notifications cleared via tests/it11_cleanup.py.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run from /app: REACT_APP_BACKEND_URL=... pytest tests/test_it12_branding.py tests/test_multitenant.py tests/test_it11_reuse_ws.py -p no:cacheprovider, then python tests/it11_cleanup.py. test_it12 creates its own TEST client and users and cleans them up, and resets the superadmin theme to null.",
+  "rca of the issue": "Green theme transparency: in index.css, the :root/[data-theme=green] block had '--surface: var(--surface)' and the same pattern for --primary-text, --nav-bg and --thumb. A custom property that references itself is invalid at computed-value time, so background: var(--surface) resolved to transparent. Mitigation: use literal values in the base theme block."
+}

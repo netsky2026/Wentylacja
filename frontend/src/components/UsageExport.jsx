@@ -33,9 +33,9 @@ export const DailyUsage = ({ t, deviceId }) => {
     <div className="panel panel-pad" data-testid="daily-usage">
       <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{t.dailyUsage}</div>
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>{t.power} (kWh)</div>
-      <Bars data={days} dataKey="kwh" color="#c9a46a" unit="kWh" testid="daily-power-chart" />
+      <Bars data={days} dataKey="kwh" color="var(--c-power)" unit="kWh" testid="daily-power-chart" />
       <div style={{ fontSize: 11, color: "var(--muted)", margin: "10px 0 4px" }}>{t.water} (m³)</div>
-      <Bars data={days} dataKey="water_m3" color="#7fa3b8" unit="m³" testid="daily-water-chart" />
+      <Bars data={days} dataKey="water_m3" color="var(--c-water)" unit="m³" testid="daily-water-chart" />
     </div>
   );
 };

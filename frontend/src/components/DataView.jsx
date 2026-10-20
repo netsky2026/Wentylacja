@@ -97,12 +97,12 @@ export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events
       <DailyUsage t={t} deviceId={deviceId} />
       <div className="font-head" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>{t.history} · {t.chamberWord} {(ch?.id ?? 0) + 1} · 3 {t.hours}</div>
       <Chart t={t} title={t.historyTemp} data={data} lines={[["temp", "var(--text)", t.temp]]} testid="chart-temp" />
-      <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "#7fa3b8", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
-      <Chart t={t} title={t.historyCo2} data={data} lines={[["co2", "#b8a37f", t.co2]]} testid="chart-co2" />
+      <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "var(--c-water)", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
+      <Chart t={t} title={t.historyCo2} data={data} lines={[["co2", "var(--c-co2)", t.co2]]} testid="chart-co2" />
       <Chart t={t} title={t.historyVent} data={data} testid="chart-vent" domain={[0, 100]}
-        lines={[["cl_closed", "#8a9bb0", t.curtainLeft], ["cr_closed", "#6f8a7a", t.curtainRight], ["chimney", "#c9c9c9", t.chimney]]} />
+        lines={[["cl_closed", "var(--c-cl)", t.curtainLeft], ["cr_closed", "var(--c-cr)", t.curtainRight], ["chimney", "var(--c-chim)", t.chimney]]} />
       <Chart t={t} title={t.historyPlant} data={plantHistory} testid="chart-plant"
-        lines={[["power_kw", "#c9a46a", `${t.power} kW`], ["water_lpm", "#7fa3b8", `${t.water} l/min`]]} />
+        lines={[["power_kw", "var(--c-power)", `${t.power} kW`], ["water_lpm", "var(--c-water)", `${t.water} l/min`]]} />
 
       {ch && <CsvExport t={t} ch={ch} deviceId={deviceId} />}
 

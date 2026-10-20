@@ -46,7 +46,7 @@ export const AlarmRecipientsCard = ({ t, clientId, clientName }) => {
         </label>
       </div>
       {!cfg.channel_configured && (
-        <div className="flex gap-2" data-testid="alarm-mocked-banner" style={{ fontSize: 11, color: "#c9a46a", background: "rgba(201,164,106,0.08)",
+        <div className="flex gap-2" data-testid="alarm-mocked-banner" style={{ fontSize: 11, color: "var(--warn-text)", background: "rgba(201,164,106,0.08)",
           border: "1px solid rgba(201,164,106,0.3)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
           <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {t.alarmMocked}
         </div>
