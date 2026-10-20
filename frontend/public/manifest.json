@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Marco Polo Wentylacja",
   "short_name": "Marco Polo Wentylacja",
   "description": "Sterowanie wentylacją chlewni – sterownik Fatek przez MQTT",

@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only PWA test. All requested items pass. manifest.json is served (200, application/json) with name and short_name 'Marco Polo Wentylacja', display standalone, start_url '/' and scope '/'. icon-192, icon-512, icon-maskable-512, apple-touch-icon and favicon-32 all return 200 image/png at the correct pixel sizes, and each shows a white pig on a green background. index.html has lang=pl, title 'Marco Polo Wentylacja', link rel=manifest, apple-touch-icon, apple-mobile-web-app-capable=yes and apple-mobile-web-app-title='Marco Polo Wentylacja'. The service worker registers with scope '/' and becomes active, and it controls the page after a reload. Live data still works while the service worker is active: the WebSocket /api/ws received 22 frames in 15s, humidity and CO2 values changed, and the status bar shows broker connected / controller online. The header at 390x844 has the logo (28px, naturalWidth 192) and title ending at x=221, with the PL/EN buttons at x=305-375, so nothing overlaps. Ustawienia shows install-card with iOS and Android instructions in both PL and EN; install-btn is correctly hidden because no beforeinstallprompt event fired. There is no horizontal overflow on Komory, Dane or Ustawienia (scrollWidth 390 = clientWidth). Quick regression passed: chamber-tab-2 switches to chamber-2-screen and the bottom nav works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home-screen icon label", "issues": ["short_name / apple-mobile-web-app-title 'Marco Polo Wentylacja' (21 chars) will probably be cut off under the icon on iOS and Android (roughly 12-14 characters fit). The user asked for this exact name, so this is informational only."]},
+      {"screen": "Icon colour", "issues": ["The icon background is about #319861 (49,152,97), a bit darker than the requested #34A56A (52,165,106). The difference is small, but brighten it if an exact match matters."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: brighten the icon background to exactly #34A56A",
+    "Optional: add \"id\": \"/\" to manifest.json so the installed app keeps a stable identity"
+  ],
+  "critical_code_review_comments": [
+    "sw.js is sound: it is network-first for navigations only and leaves api/ws requests untouched, so live data is unaffected. On install it caches '/' (the dev HTML); this is acceptable because navigations always try the network first.",
+    "When the service worker cache is bumped, skipWaiting and clients.claim apply the new version immediately; no update prompt is needed for this app."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "PWA checks: run curl against /manifest.json and each icon. To check the service worker, call navigator.serviceWorker.getRegistration(); navigator.serviceWorker.controller is only true after a reload. The app opens two WebSockets: /ws is the dev-server HMR socket and /api/ws carries the app data. The temperature value changes slowly, so check humidity and CO2 (the whole chamber screen text) for live changes over about 15s. Testids: nav-chambers, nav-data, nav-settings, chamber-tab-N, chamber-N-screen, install-card, install-btn, app-logo, app-title, lang-pl, lang-en."
+}

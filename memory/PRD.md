@@ -54,3 +54,8 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Broker settings form (PUT /api/broker: host, port, user, password, TLS, prefix, device_id), saved in Mongo broker_config, reconnects gateway+simulator.
 - Online window 10s. Tested iteration_4 (backend 42/42, frontend 100%).
 - Backlog: PWA (add to home screen), encrypt broker password, CSV export of plant usage.
+
+## 2026-06 Update 4 (PWA)
+- Installable PWA "Marco Polo Wentylacja": manifest (standalone, id /), icons (green pig on dark bg) 192/512/maskable/apple-touch, sw.js (navigation network-first, cache mpw-v4; API/WS untouched), apple meta tags, safe-area padding, InstallCard in Ustawienia, logo in header.
+- Tested iteration_5 (frontend 100%).
+- Production TODO: real Fatek via Modbus→MQTT gateway, private broker with TLS, app login, SMS/e-mail alarms, deploy (stable URL), native store app via Deploy → "Add Mobile App".
