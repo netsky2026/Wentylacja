@@ -4,17 +4,18 @@ import { toast } from "sonner";
 import { BellRing, Trash2, Plus, Send, AlertTriangle } from "lucide-react";
 import { API } from "@/api";
 
-export const AlarmRecipientsCard = ({ t }) => {
+export const AlarmRecipientsCard = ({ t, clientId, clientName }) => {
+  const q = clientId ? `?client_id=${clientId}` : "";
   const [cfg, setCfg] = useState(null);
   const [type, setType] = useState("email");
   const [value, setValue] = useState("");
-  const load = useCallback(() => axios.get(`${API}/alarm-settings`).then(({ data }) => setCfg(data)).catch(() => {}), []);
+  const load = useCallback(() => axios.get(`${API}/alarm-settings${q}`).then(({ data }) => setCfg(data)).catch(() => {}), [q]);
   useEffect(() => { load(); }, [load]);
   if (!cfg) return null;
 
   const save = async (next) => {
     try {
-      const { data } = await axios.put(`${API}/alarm-settings`, { enabled: next.enabled, recipients: next.recipients });
+      const { data } = await axios.put(`${API}/alarm-settings${q}`, { enabled: next.enabled, recipients: next.recipients });
       setCfg(data);
       return true;
     } catch (e) {
@@ -31,14 +32,14 @@ export const AlarmRecipientsCard = ({ t }) => {
   };
   const remove = (i) => save({ ...cfg, recipients: cfg.recipients.filter((_, j) => j !== i) });
   const test = async () => {
-    try { const { data } = await axios.post(`${API}/alarm-settings/test`); setCfg(data); toast.success(t.testSent); }
+    try { const { data } = await axios.post(`${API}/alarm-settings/test${q}`); setCfg(data); toast.success(t.testSent); }
     catch (e) { toast.error(t.saveFailed); }
   };
 
   return (
     <div className="panel panel-pad" data-testid="alarm-recipients-card">
       <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <span className="flex items-center gap-2 font-head" style={{ fontSize: 15, fontWeight: 600 }}><BellRing size={16} /> {t.alarmRecipients}</span>
+        <span className="flex items-center gap-2 font-head" style={{ fontSize: 15, fontWeight: 600 }}><BellRing size={16} /> {t.alarmRecipients}{clientName ? ` · ${clientName}` : ""}</span>
         <label className="flex items-center gap-2" style={{ fontSize: 12 }}>
           <input type="checkbox" checked={cfg.enabled} onChange={(e) => save({ ...cfg, enabled: e.target.checked })} data-testid="alarm-enabled" />
           {cfg.enabled ? t.on : t.off}

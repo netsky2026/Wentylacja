@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 JWT_ALGORITHM = "HS256"
 ACCESS_MIN = 15
 REFRESH_DAYS = 30
-ROLES = {"viewer": 0, "operator": 1, "admin": 2}
+ROLES = {"viewer": 0, "operator": 1, "admin": 2, "superadmin": 3}
 MAX_ATTEMPTS = 5
 LOCK_MIN = 15
 
@@ -47,7 +47,8 @@ def _set_cookies(resp: Response, u: dict):
 
 
 def public_user(u: dict) -> dict:
-    return {"id": str(u["_id"]), "email": u["email"], "name": u.get("name", ""), "role": u["role"]}
+    return {"id": str(u["_id"]), "email": u["email"], "name": u.get("name", ""), "role": u["role"],
+            "client_id": u.get("client_id")}
 
 
 async def user_from_token(token: Optional[str], kind: str = "access") -> Optional[dict]:
@@ -98,7 +99,8 @@ class UserIn(BaseModel):
     email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     name: str = Field(default="", max_length=80)
     password: str = Field(min_length=8, max_length=128)
-    role: str = Field(pattern=r"^(viewer|operator|admin)$")
+    role: str = Field(pattern=r"^(viewer|operator|admin|superadmin)$")
+    client_id: Optional[str] = None
 
 
 router = APIRouter(prefix="/api")
@@ -155,17 +157,33 @@ async def change_password(body: PasswordIn, response: Response, user: dict = Dep
     return {"ok": True}
 
 
+def _user_scope(actor: dict) -> dict:
+    return {} if actor["role"] == "superadmin" else {"client_id": actor.get("client_id")}
+
+
 @router.get("/users")
-async def list_users(_: dict = Depends(require("admin"))):
-    return {"users": [public_user(u) async for u in db.users.find({}).sort("email", 1)]}
+async def list_users(client_id: Optional[str] = None, actor: dict = Depends(require("admin"))):
+    q = _user_scope(actor)
+    if actor["role"] == "superadmin" and client_id:
+        q = {"client_id": client_id}
+    return {"users": [public_user(u) async for u in db.users.find(q).sort("email", 1)]}
 
 
 @router.post("/users")
-async def create_user(body: UserIn, _: dict = Depends(require("admin"))):
+async def create_user(body: UserIn, actor: dict = Depends(require("admin"))):
     email = body.email.strip().lower()
+    if actor["role"] == "superadmin":
+        client_id = None if body.role == "superadmin" else body.client_id
+        if body.role != "superadmin" and (not client_id or not ObjectId.is_valid(client_id)
+                                          or not await db.clients.find_one({"_id": ObjectId(client_id)})):
+            raise HTTPException(422, "Valid client_id required")
+    else:
+        if body.role == "superadmin":
+            raise HTTPException(403, "Insufficient permissions")
+        client_id = actor.get("client_id")
     if await db.users.find_one({"email": email}):
         raise HTTPException(409, "User already exists")
-    doc = {"email": email, "name": body.name.strip(), "role": body.role,
+    doc = {"email": email, "name": body.name.strip(), "role": body.role, "client_id": client_id,
            "password_hash": hash_password(body.password), "created_at": datetime.now(timezone.utc)}
     res = await db.users.insert_one(doc)
     doc["_id"] = res.inserted_id
@@ -173,14 +191,15 @@ async def create_user(body: UserIn, _: dict = Depends(require("admin"))):
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str, admin: dict = Depends(require("admin"))):
+async def delete_user(user_id: str, actor: dict = Depends(require("admin"))):
     if not ObjectId.is_valid(user_id):
         raise HTTPException(404, "User not found")
-    if ObjectId(user_id) == admin["_id"]:
+    if ObjectId(user_id) == actor["_id"]:
         raise HTTPException(400, "Cannot delete yourself")
-    res = await db.users.delete_one({"_id": ObjectId(user_id)})
-    if not res.deleted_count:
+    target = await db.users.find_one({"_id": ObjectId(user_id), **_user_scope(actor)})
+    if not target or (target["role"] == "superadmin" and actor["role"] != "superadmin"):
         raise HTTPException(404, "User not found")
+    await db.users.delete_one({"_id": target["_id"]})
     return {"ok": True}
 
 
@@ -192,9 +211,12 @@ async def setup():
     pw = os.environ["ADMIN_PASSWORD"]
     u = await db.users.find_one({"email": email})
     if not u:
-        await db.users.insert_one({"email": email, "name": "Admin", "role": "admin",
+        await db.users.insert_one({"email": email, "name": "Admin", "role": "superadmin", "client_id": None,
                                    "password_hash": hash_password(pw), "created_at": datetime.now(timezone.utc)})
-    elif not verify_password(pw, u["password_hash"]):
-        await db.users.update_one({"_id": u["_id"]}, {"$set": {"password_hash": hash_password(pw), "role": "admin"},
-                                                    "$inc": {"tv": 1}})
-
+    else:
+        upd = {"role": "superadmin", "client_id": None}
+        inc = {}
+        if not verify_password(pw, u["password_hash"]):
+            upd["password_hash"] = hash_password(pw)
+            inc = {"tv": 1}
+        await db.users.update_one({"_id": u["_id"]}, {"$set": upd, **({"$inc": inc} if inc else {})})

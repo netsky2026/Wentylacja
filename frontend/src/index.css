@@ -211,3 +211,7 @@ body {
 input[type=checkbox] { accent-color: #34A56A; }
 
 .action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.device-select { flex: 1; min-width: 0; background: transparent; color: var(--text); border: none; font-size: 15px; font-weight: 700;
+  padding: 8px 4px; cursor: pointer; outline: none; }
+.device-select option { background: #141414; color: var(--text); }
+.chamber-switch::-webkit-scrollbar { height: 0; }

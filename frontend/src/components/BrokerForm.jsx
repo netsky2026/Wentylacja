@@ -13,7 +13,7 @@ export const BrokerForm = ({ t, config, onSaved }) => {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (config) setF({ host: config.broker_host, port: String(config.broker_port), username: config.username || "",
-      password: "", tls: !!config.tls, prefix: config.prefix, device_id: config.device_id });
+      password: "", tls: !!config.tls, prefix: config.prefix });
   }, [config]);
   if (!f) return null;
   const set = (k) => (e) => {
@@ -27,13 +27,13 @@ export const BrokerForm = ({ t, config, onSaved }) => {
   );
   const save = async () => {
     const port = parseInt(f.port, 10);
-    if (!f.host.trim() || !f.prefix.trim() || !f.device_id.trim() || !(port >= 1 && port <= 65535)) {
+    if (!f.host.trim() || !f.prefix.trim() || !(port >= 1 && port <= 65535)) {
       toast.error(t.invalidBroker); return;
     }
     setBusy(true);
     try {
       const body = { host: f.host.trim(), port, username: f.username.trim(), tls: f.tls,
-        prefix: f.prefix.trim(), device_id: f.device_id.trim() };
+        prefix: f.prefix.trim() };
       if (f.password) body.password = f.password;
       const { data } = await axios.put(`${API}/broker`, body);
       onSaved(data);
@@ -53,13 +53,12 @@ export const BrokerForm = ({ t, config, onSaved }) => {
       </div>
       <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 8 }}>
         <Field label={t.prefix}>{inp("prefix")}</Field>
-        <Field label={t.deviceId}>{inp("device_id")}</Field>
       </div>
       <label className="flex items-center gap-2" style={{ fontSize: 12, margin: "12px 0" }}>
         <input type="checkbox" checked={f.tls} onChange={set("tls")} data-testid="broker-tls" /> TLS (8883)
       </label>
       <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 10, wordBreak: "break-all" }}>
-        {t.stateTopic}: {config.state_topic}<br />{t.commandTopic}: {config.command_topic}
+        {t.stateTopic}: {f.prefix}/&lt;ID&gt;/state · {t.commandTopic}: {f.prefix}/&lt;ID&gt;/command
       </div>
       <button className="action-btn" data-testid="broker-save" onClick={save} disabled={busy} style={{ width: "100%", padding: 10 }}>
         {busy ? "…" : t.saveConnect}

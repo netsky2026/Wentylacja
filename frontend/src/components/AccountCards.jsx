@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { LogOut, Trash2, UserPlus } from "lucide-react";
 import { API, formatApiError } from "@/api";
 
-const ROLE_KEYS = { viewer: "roleViewer", operator: "roleOperator", admin: "roleAdmin" };
+const ROLE_KEYS = { viewer: "roleViewer", operator: "roleOperator", admin: "roleAdmin", superadmin: "roleSuperadmin" };
 
 export const AccountCard = ({ t, user, onLogout }) => {
   const [cur, setCur] = useState("");
@@ -41,14 +41,15 @@ export const AccountCard = ({ t, user, onLogout }) => {
   );
 };
 
-export const UsersCard = ({ t, me }) => {
+export const UsersCard = ({ t, me, clientId, clientName }) => {
+  const q = clientId ? `?client_id=${clientId}` : "";
   const [users, setUsers] = useState([]);
   const [f, setF] = useState({ email: "", name: "", password: "", role: "operator" });
-  const load = useCallback(() => axios.get(`${API}/users`).then(({ data }) => setUsers(data.users)).catch(() => {}), []);
+  const load = useCallback(() => axios.get(`${API}/users${q}`).then(({ data }) => setUsers(data.users)).catch(() => {}), [q]);
   useEffect(() => { load(); }, [load]);
   const add = async () => {
     try {
-      await axios.post(`${API}/users`, f);
+      await axios.post(`${API}/users`, { ...f, client_id: clientId });
       setF({ email: "", name: "", password: "", role: "operator" });
       toast.success(t.userAdded);
       load();
@@ -63,7 +64,7 @@ export const UsersCard = ({ t, me }) => {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
     <div className="panel panel-pad" data-testid="users-card">
-      <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{t.users}</div>
+      <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{t.users}{clientName ? ` · ${clientName}` : ""}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
         {users.map((u) => (
           <div key={u.id} className="flex items-center justify-between reg-cell" style={{ padding: "8px 10px" }} data-testid={`user-row-${u.email}`}>

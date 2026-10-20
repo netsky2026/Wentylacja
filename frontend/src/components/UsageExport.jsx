@@ -21,14 +21,14 @@ const Bars = ({ data, dataKey, color, unit, testid }) => (
   </div>
 );
 
-export const DailyUsage = ({ t }) => {
+export const DailyUsage = ({ t, deviceId }) => {
   const [days, setDays] = useState([]);
   useEffect(() => {
-    const load = () => axios.get(`${API}/usage/daily?days=7`).then(({ data }) => setDays(data.days || [])).catch(() => {});
+    const load = () => axios.get(`${API}/devices/${deviceId}/usage/daily?days=7`).then(({ data }) => setDays(data.days || [])).catch(() => {});
     load();
     const i = setInterval(load, 60000);
     return () => clearInterval(i);
-  }, []);
+  }, [deviceId]);
   return (
     <div className="panel panel-pad" data-testid="daily-usage">
       <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{t.dailyUsage}</div>
@@ -40,7 +40,7 @@ export const DailyUsage = ({ t }) => {
   );
 };
 
-export const CsvExport = ({ t, ch }) => {
+export const CsvExport = ({ t, ch, deviceId }) => {
   const [hours, setHours] = useState(24);
   const opts = [[24, "24 h"], [168, `7 ${t.daysShort}`], [720, `30 ${t.daysShort}`]];
   return (
@@ -55,7 +55,7 @@ export const CsvExport = ({ t, ch }) => {
             }}>{label}</button>
         ))}
       </div>
-      <a data-testid="csv-download" className="action-btn" href={`${API}/history/csv?chamber=${ch.id}&hours=${hours}`}
+      <a data-testid="csv-download" className="action-btn" href={`${API}/devices/${deviceId}/history/csv?chamber=${ch.id}&hours=${hours}`}
         style={{ width: "100%", padding: 10, textDecoration: "none", color: "var(--text)" }}>
         <Download size={15} /> {t.download}
       </a>

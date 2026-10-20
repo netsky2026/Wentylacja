@@ -86,7 +86,7 @@ const EventLog = ({ t, events }) => {
   );
 };
 
-export const DataView = ({ t, ch, plant, history, plantHistory, events }) => {
+export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events }) => {
   const data = (history[String(ch?.id)] || []).map((d) => ({
     ...d, cl_closed: d.curtain_left == null ? null : 100 - d.curtain_left,
     cr_closed: d.curtain_right == null ? null : 100 - d.curtain_right,
@@ -94,7 +94,7 @@ export const DataView = ({ t, ch, plant, history, plantHistory, events }) => {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="data-view">
       {plant && <PlantTile plant={plant} t={t} />}
-      <DailyUsage t={t} />
+      <DailyUsage t={t} deviceId={deviceId} />
       <div className="font-head" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>{t.history} · {t.chamberWord} {(ch?.id ?? 0) + 1} · 3 {t.hours}</div>
       <Chart t={t} title={t.historyTemp} data={data} lines={[["temp", "#d6dbe0", t.temp]]} testid="chart-temp" />
       <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "#7fa3b8", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
@@ -104,7 +104,7 @@ export const DataView = ({ t, ch, plant, history, plantHistory, events }) => {
       <Chart t={t} title={t.historyPlant} data={plantHistory} testid="chart-plant"
         lines={[["power_kw", "#c9a46a", `${t.power} kW`], ["water_lpm", "#7fa3b8", `${t.water} l/min`]]} />
 
-      {ch && <CsvExport t={t} ch={ch} />}
+      {ch && <CsvExport t={t} ch={ch} deviceId={deviceId} />}
 
       <EventLog t={t} events={events} />
     </div>

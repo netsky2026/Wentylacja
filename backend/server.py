@@ -1,36 +1,23 @@
-"""
-Fatek PLC MQTT gateway + cold-store (chłodnia) simulator with 3 chambers.
-
-Architecture:
-  Simulated Fatek FBs PLC (cold store) <--MQTT--> HiveMQ broker <--MQTT--> FastAPI backend <--WS/HTTP--> React app
-
-The simulator models a cold store with 3 chambers (komory). Each chamber has a
-temperature, a setpoint, a thermostat (automatic cooling with hysteresis), manual
-defrost, a door sensor and an alarm. It owns its own MQTT client (acts as the device),
-publishes chamber state and consumes commands. The backend owns a separate MQTT client
-that subscribes to state and publishes user commands, so the whole round-trip travels
-through the public broker just like a real Fatek controller.
-"""
+"""Multi-tenant Fatek PLC MQTT gateway for piggery ventilation (clients -> PLC devices -> chambers)."""
 from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import json
 import time
+import math
+import copy
+import socket
+import secrets
 import asyncio
 import logging
 import threading
 import random
 import uuid
-import copy
-import re
-import math
-import socket
 import ipaddress
-from cryptography.fernet import Fernet, InvalidToken
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -38,6 +25,8 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Optional, List
 
 import paho.mqtt.client as mqtt
+from bson import ObjectId
+from cryptography.fernet import Fernet, InvalidToken
 from pydantic import BaseModel, Field
 
 ROOT_DIR = Path(__file__).parent
@@ -46,46 +35,33 @@ load_dotenv(ROOT_DIR / '.env')
 import auth  # noqa: E402
 from auth import require  # noqa: E402
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("fatek")
 
 MONGO_URL = os.environ['MONGO_URL']
 DB_NAME = os.environ['DB_NAME']
-MQTT_HOST = os.environ.get('MQTT_HOST', 'broker.hivemq.com')
-MQTT_PORT = int(os.environ.get('MQTT_PORT', '1883'))
-MQTT_PREFIX = os.environ.get('MQTT_PREFIX', 'emgt-fatek-7f3a9c').strip('/')
-
-DEVICE_ID = "chlodnia-01"
+FRONTEND_URL = os.environ["FRONTEND_URL"].rstrip("/")
+MQTT_HOST = os.environ['MQTT_HOST']
+MQTT_PORT = int(os.environ['MQTT_PORT'])
+MQTT_PREFIX = os.environ['MQTT_PREFIX'].strip('/')
 MQTT_USER = ""
 MQTT_PASS = ""
 MQTT_TLS = False
 SAMPLE_S = 15
-
-# per-chamber alarm thresholds (loaded from Mongo at startup, defaults below)
-DEFAULT_THRESHOLDS = {
-    0: {"temp_max": 26.0, "co2_max": 3000.0},
-    1: {"temp_max": 28.0, "co2_max": 3000.0},
-    2: {"temp_max": 30.0, "co2_max": 3000.0},
-}
-THRESHOLDS: dict = dict(DEFAULT_THRESHOLDS)
+ALARM_REMIND_S = 30 * 60
+DEFAULT_TH = {"temp_max": 28.0, "co2_max": 3000.0}
+LEGACY_DEVICE = "chlodnia-01"
+FERNET = Fernet(os.environ["BROKER_SECRET"].encode())
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
+DEVICES: dict = {}     # device_id -> {client_id, client_name, name, chambers, simulated}
+THRESHOLDS: dict = {}  # (device_id, chamber) -> {temp_max, co2_max}
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def make_client(tag: str) -> mqtt.Client:
-    c = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                    client_id=f"{tag}-{uuid.uuid4().hex[:8]}")
-    if MQTT_USER:
-        c.username_pw_set(MQTT_USER, MQTT_PASS or None)
-    if MQTT_TLS:
-        c.tls_set()
-    return c
 
 
 def state_topic(device_id: str) -> str:
@@ -96,37 +72,56 @@ def command_topic(device_id: str) -> str:
     return f"{MQTT_PREFIX}/{device_id}/command"
 
 
+def make_client(tag: str) -> mqtt.Client:
+    c = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=f"{tag}-{uuid.uuid4().hex[:8]}")
+    if MQTT_USER:
+        c.username_pw_set(MQTT_USER, MQTT_PASS or None)
+    if MQTT_TLS:
+        c.tls_set()
+    return c
+
+
+def encrypt_secret(v: str) -> str:
+    return FERNET.encrypt(v.encode()).decode() if v else ""
+
+
+def decrypt_secret(v: str) -> str:
+    try:
+        return FERNET.decrypt(v.encode()).decode() if v else ""
+    except InvalidToken:
+        logger.warning("secret could not be decrypted")
+        return ""
+
+
+def th_for(device_id: str, chamber: int) -> dict:
+    return THRESHOLDS.get((device_id, chamber), DEFAULT_TH)
+
+
 # ============================================================
-# Simulated piggery (chlewnia) — external device, own MQTT client
+# Simulated Fatek PLC (one per simulated device, own MQTT client)
 # ============================================================
 class PiggerySimulator:
-    def __init__(self):
+    def __init__(self, device_id: str, n: int):
+        self.device_id = device_id
         self.enabled = True
-        # chamber: temp control via ventilation (curtains L/R + chimneys) and heating
-        self.chambers = [
-            {"id": 0, "name": "Komora 1", "temp": 21.0, "setpoint": 20.0,
-             "humidity": 65.0, "co2": 900.0, "on": True, "heating": False,
-             "curtain_left": 30.0, "curtain_right": 30.0, "chimney": 40.0, "alarm": False},
-            {"id": 1, "name": "Komora 2", "temp": 24.5, "setpoint": 22.0,
-             "humidity": 70.0, "co2": 1100.0, "on": True, "heating": False,
-             "curtain_left": 50.0, "curtain_right": 55.0, "chimney": 60.0, "alarm": False},
-            {"id": 2, "name": "Komora 3", "temp": 18.0, "setpoint": 24.0,
-             "humidity": 60.0, "co2": 800.0, "on": False, "heating": False,
-             "curtain_left": 0.0, "curtain_right": 0.0, "chimney": 0.0, "alarm": False},
-        ]
-        # whole-plant metering
-        self.plant = {"power_kw": 0.0, "power_kwh": 128.4, "water_lpm": 0.0, "water_total_l": 5420.0}
+        rnd = random.Random(device_id)
+        self.chambers = []
+        for i in range(n):
+            sp = 20.0 + (i % 3) * 2
+            self.chambers.append({
+                "id": i, "temp": round(sp + rnd.uniform(-1.5, 2.0), 1), "setpoint": sp, "humidity": 65.0 + rnd.uniform(0, 8),
+                "co2": 900.0 + rnd.uniform(0, 400), "on": True, "heating": False, "mode": "auto",
+                "curtain_left": 30.0, "curtain_right": 30.0, "chimney": 40.0,
+                "manual": {"curtain_left": 30.0, "curtain_right": 30.0, "chimney": 40.0}})
+        self.plant = {"power_kw": 0.0, "power_kwh": round(rnd.uniform(50, 200), 1), "water_lpm": 0.0,
+                      "water_total_l": round(rnd.uniform(2000, 8000), 1)}
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.mc: Optional[mqtt.Client] = None
-        for ch in self.chambers:
-            ch["mode"] = "auto"
-            ch["manual"] = {"curtain_left": ch["curtain_left"], "curtain_right": ch["curtain_right"],
-                          "chimney": ch["chimney"]}
 
     def mqtt_start(self):
-        self.mc = make_client("fatek-sim")
-        self.mc.on_connect = self._on_connect
+        self.mc = make_client(f"sim-{self.device_id}"[:20])
+        self.mc.on_connect = lambda c, u, f, rc, p: c.subscribe(command_topic(self.device_id), qos=1)
         self.mc.on_message = self._on_message
         self.mc.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
         self.mc.loop_start()
@@ -138,10 +133,6 @@ class PiggerySimulator:
         except Exception:
             pass
 
-    def _on_connect(self, c, u, flags, rc, props):
-        logger.info("SIM connected rc=%s", rc)
-        c.subscribe(command_topic(DEVICE_ID), qos=1)
-
     def _on_message(self, c, u, msg):
         try:
             cmd = json.loads(msg.payload.decode())
@@ -152,95 +143,83 @@ class PiggerySimulator:
 
     def apply_command(self, cmd: dict):
         t = cmd.get("type")
-        ci = int(cmd.get("chamber", -1))
+        try:
+            ci = int(cmd.get("chamber", -1))
+        except (TypeError, ValueError):
+            return
         if not (0 <= ci < len(self.chambers)):
             return
         ch = self.chambers[ci]
-        if t == "set_setpoint":
-            try:
-                ch["setpoint"] = max(5.0, min(35.0, float(cmd.get("value"))))
-            except (TypeError, ValueError):
-                pass
-        elif t == "set_mode":
-            if cmd.get("value") in ("auto", "manual"):
-                ch["mode"] = cmd["value"]
-                if ch["mode"] == "manual":
-                    ch["manual"] = {k: ch[k] for k in ("curtain_left", "curtain_right", "chimney")}
+        if t == "set_setpoint" and isinstance(cmd.get("value"), (int, float)):
+            ch["setpoint"] = max(5.0, min(35.0, float(cmd["value"])))
+        elif t == "set_mode" and cmd.get("value") in ("auto", "manual"):
+            ch["mode"] = cmd["value"]
+            if ch["mode"] == "manual":
+                ch["manual"] = {k: ch[k] for k in VENT_FIELDS}
         elif t == "set_vent":
-            val = cmd.get("value") or {}
-            for k in ("curtain_left", "curtain_right", "chimney"):
-                if isinstance(val.get(k), (int, float)) and not isinstance(val.get(k), bool):
-                    ch["manual"][k] = max(0.0, min(100.0, float(val[k])))
+            for k, v in (cmd.get("value") or {}).items():
+                if k in VENT_FIELDS and isinstance(v, (int, float)) and not isinstance(v, bool):
+                    ch["manual"][k] = max(0.0, min(100.0, float(v)))
         elif t == "chamber_power":
             ch["on"] = bool(cmd.get("value"))
             if not ch["on"]:
                 ch["heating"] = False
-                ch["curtain_left"] = ch["curtain_right"] = ch["chimney"] = 0.0
 
     @staticmethod
     def _approach(cur, target, rate):
-        if cur < target:
-            return min(target, cur + rate)
-        return max(target, cur - rate)
+        return min(target, cur + rate) if cur < target else max(target, cur - rate)
 
     def _step(self):
         for ch in self.chambers:
             if not ch["on"]:
-                ch["temp"] += (18.0 - ch["temp"]) * 0.02  # drift to barn ambient
-                ch["curtain_left"] = self._approach(ch["curtain_left"], 0.0, 4)
-                ch["curtain_right"] = self._approach(ch["curtain_right"], 0.0, 4)
-                ch["chimney"] = self._approach(ch["chimney"], 0.0, 4)
+                ch["temp"] += (18.0 - ch["temp"]) * 0.02
+                for k in VENT_FIELDS:
+                    ch[k] = self._approach(ch[k], 0.0, 4)
                 ch["heating"] = False
-                ch["alarm"] = False
                 self._sensors(ch)
                 continue
-            sp = ch["setpoint"]
-            err = ch["temp"] - sp  # >0 too warm -> ventilate; <0 too cold -> heat
-            # ventilation demand 0..100 from how far above setpoint
-            target_vent = max(0.0, min(100.0, (err + 1.0) * 28.0))
+            err = ch["temp"] - ch["setpoint"]
+            target = max(0.0, min(100.0, (err + 1.0) * 28.0))
             if ch["mode"] == "manual":
-                tl, tr, tc = ch["manual"]["curtain_left"], ch["manual"]["curtain_right"], ch["manual"]["chimney"]
+                tl, tr, tc = (ch["manual"][k] for k in VENT_FIELDS)
             else:
-                tl, tr, tc = target_vent, min(100.0, target_vent + 4), target_vent
+                tl, tr, tc = target, min(100.0, target + 4), target
             ch["curtain_left"] = round(self._approach(ch["curtain_left"], tl, 3), 1)
             ch["curtain_right"] = round(self._approach(ch["curtain_right"], tr, 3), 1)
             ch["chimney"] = round(self._approach(ch["chimney"], tc, 4), 1)
             ch["heating"] = err < -1.0
-            # temperature dynamics
             vent = (ch["curtain_left"] + ch["curtain_right"] + ch["chimney"]) / 3.0
-            ch["temp"] += 0.05  # animal body heat
-            ch["temp"] -= vent * 0.004  # ventilation cooling
-            if ch["heating"]:
-                ch["temp"] += 0.18
-            ch["temp"] += random.uniform(-0.05, 0.05)
+            ch["temp"] += 0.05 - vent * 0.004 + (0.18 if ch["heating"] else 0) + random.uniform(-0.05, 0.05)
             ch["temp"] = round(ch["temp"], 1)
-            ch["alarm"] = False  # thresholds evaluated by backend gateway
             self._sensors(ch)
-        self._meter()
-
-    def _sensors(self, ch):
-        vent = (ch["curtain_left"] + ch["curtain_right"] + ch["chimney"]) / 3.0 if ch["on"] else 0.0
-        # humidity: animals add, ventilation removes
-        hum_target = (78.0 - vent * 0.3) if ch["on"] else 60.0
-        ch["humidity"] += (hum_target - ch["humidity"]) * 0.03 + random.uniform(-0.3, 0.3)
-        ch["humidity"] = round(max(35.0, min(99.0, ch["humidity"])), 1)
-        # CO2: animals raise it, ventilation lowers it
-        co2_target = (2400.0 - vent * 18.0) if ch["on"] else 500.0
-        ch["co2"] += (co2_target - ch["co2"]) * 0.03 + random.uniform(-10, 10)
-        ch["co2"] = round(max(400.0, min(6000.0, ch["co2"])), 0)
-
-    def _meter(self):
-        # power: base + fans (chimney) + heaters
         fans = sum(ch["chimney"] for ch in self.chambers if ch["on"]) / 100.0
-        heat = sum(1 for ch in self.chambers if ch.get("heating"))
-        power = 1.2 + fans * 2.5 + heat * 3.0 + random.uniform(-0.2, 0.2)
-        self.plant["power_kw"] = round(max(0.0, power), 2)
+        heat = sum(1 for ch in self.chambers if ch["heating"])
+        power = max(0.0, 1.2 + fans * 2.5 + heat * 3.0 + random.uniform(-0.2, 0.2))
+        self.plant["power_kw"] = round(power, 2)
         self.plant["power_kwh"] = round(self.plant["power_kwh"] + power / 3600.0, 3)
-        # water: animals drink (fluctuating)
-        active = sum(1 for ch in self.chambers if ch["on"])
-        lpm = active * random.uniform(0.6, 2.2)
+        lpm = sum(1 for ch in self.chambers if ch["on"]) * random.uniform(0.6, 2.2)
         self.plant["water_lpm"] = round(lpm, 2)
         self.plant["water_total_l"] = round(self.plant["water_total_l"] + lpm / 60.0, 2)
+
+    @staticmethod
+    def _sensors(ch):
+        vent = (ch["curtain_left"] + ch["curtain_right"] + ch["chimney"]) / 3.0 if ch["on"] else 0.0
+        hum_t = (78.0 - vent * 0.3) if ch["on"] else 60.0
+        ch["humidity"] = round(max(35.0, min(99.0, ch["humidity"] + (hum_t - ch["humidity"]) * 0.03 + random.uniform(-0.3, 0.3))), 1)
+        co2_t = (2400.0 - vent * 18.0) if ch["on"] else 500.0
+        ch["co2"] = round(max(400.0, min(6000.0, ch["co2"] + (co2_t - ch["co2"]) * 0.03 + random.uniform(-10, 10))), 0)
+
+    def snapshot(self) -> dict:
+        return {"device_id": self.device_id, "model": "Fatek FBs-24MC (symulator)",
+                "chambers": copy.deepcopy(self.chambers), "plant": dict(self.plant), "ts": now_iso()}
+
+    def publish(self):
+        if not self.enabled or not self.mc:
+            return
+        try:
+            self.mc.publish(state_topic(self.device_id), json.dumps(self.snapshot()), qos=1)
+        except Exception as e:
+            logger.warning("SIM publish failed: %s", e)
 
     def _loop(self):
         while not self._stop.is_set():
@@ -248,29 +227,8 @@ class PiggerySimulator:
             self.publish()
             self._stop.wait(1.0)
 
-    def snapshot(self) -> dict:
-        return {
-            "device_id": DEVICE_ID,
-            "model": "Fatek FBs-24MC",
-            "chambers": [
-                {k: v for k, v in ch.items() if not k.startswith("_")}
-                for ch in self.chambers
-            ],
-            "plant": dict(self.plant),
-            "ts": now_iso(),
-        }
-
-    def publish(self):
-        if not self.enabled:
-            return
-        try:
-            self.mc.publish(state_topic(DEVICE_ID), json.dumps(self.snapshot()), qos=1)
-        except Exception as e:
-            logger.warning("SIM publish failed: %s", e)
-
     def start(self):
         self.mqtt_start()
-        self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -279,8 +237,33 @@ class PiggerySimulator:
         self.mqtt_stop()
 
 
+class SimManager:
+    def __init__(self):
+        self.sims: dict = {}
+
+    def sync(self):
+        wanted = {d: v["chambers"] for d, v in DEVICES.items() if v["simulated"]}
+        for d in list(self.sims):
+            if d not in wanted or len(self.sims[d].chambers) != wanted[d]:
+                self.sims.pop(d).stop()
+        for d, n in wanted.items():
+            if d not in self.sims:
+                self.sims[d] = PiggerySimulator(d, n)
+                self.sims[d].start()
+
+    def restart_mqtt(self):
+        for s in self.sims.values():
+            s.mqtt_stop()
+            s.mqtt_start()
+
+    def stop_all(self):
+        for s in self.sims.values():
+            s.stop()
+        self.sims.clear()
+
+
 # ============================================================
-# Backend gateway MQTT client (subscriber + commander)
+# Payload validation
 # ============================================================
 NUM_FIELDS = ("temp", "setpoint", "humidity", "co2", "curtain_left", "curtain_right", "chimney")
 VENT_FIELDS = ("curtain_left", "curtain_right", "chimney")
@@ -291,18 +274,16 @@ def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def sanitize_state(p) -> Optional[dict]:
-    """Accept only well-formed numeric PLC state; anything else from the broker is dropped."""
+def sanitize_state(p, device_id: str) -> Optional[dict]:
+    """Accept only well-formed numeric state with exactly the device's chambers; drop anything else."""
+    n = DEVICES[device_id]["chambers"]
     if not isinstance(p, dict) or not isinstance(p.get("chambers"), list):
         return None
     ids = [c.get("id") if isinstance(c, dict) else None for c in p["chambers"]]
-    if len(ids) != len(DEFAULT_THRESHOLDS) or not all(_num(i) for i in ids) or \
-            sorted(int(i) for i in ids) != sorted(DEFAULT_THRESHOLDS):
+    if len(ids) != n or not all(_num(i) for i in ids) or sorted(int(i) for i in ids) != list(range(n)):
         return None
     chambers = []
     for ch in sorted(p["chambers"], key=lambda c: int(c["id"])):
-        if not isinstance(ch, dict) or not _num(ch.get("id")) or int(ch["id"]) not in DEFAULT_THRESHOLDS:
-            return None
         cid = int(ch["id"])
         out = {"id": cid, "name": f"Komora {cid + 1}", "on": bool(ch.get("on")), "heating": bool(ch.get("heating")),
                "mode": "manual" if ch.get("mode") == "manual" else "auto"}
@@ -315,17 +296,43 @@ def sanitize_state(p) -> Optional[dict]:
             out["manual"] = {k: float(man[k]) for k in VENT_FIELDS if _num(man.get(k))}
         chambers.append(out)
     plant_in = p.get("plant") if isinstance(p.get("plant"), dict) else {}
-    plant = {k: float(plant_in[k]) for k in PLANT_FIELDS if _num(plant_in.get(k))}
-    return {"device_id": DEVICE_ID, "model": str(p.get("model", ""))[:64], "chambers": chambers,
-            "plant": plant, "ts": now_iso()}
+    return {"device_id": device_id, "model": str(p.get("model", ""))[:64], "chambers": chambers,
+            "plant": {k: float(plant_in[k]) for k in PLANT_FIELDS if _num(plant_in.get(k))}, "ts": now_iso()}
 
 
+def annotate(device_id: str, payload: dict) -> dict:
+    for ch in payload["chambers"]:
+        th = th_for(device_id, ch["id"])
+        ch["temp_max"], ch["co2_max"] = th["temp_max"], th["co2_max"]
+        ch["temp_alarm"] = bool(ch["on"] and ch["temp"] > th["temp_max"])
+        ch["co2_alarm"] = bool(ch["co2"] > th["co2_max"])
+        ch["alarm"] = ch["temp_alarm"] or ch["co2_alarm"]
+    return payload
+
+
+def alarm_reason(ch: dict) -> str:
+    r = []
+    if ch.get("temp_alarm"):
+        r.append(f"temperatura {ch['temp']}°C > {ch.get('temp_max')}°C")
+    if ch.get("co2_alarm"):
+        r.append(f"CO₂ {int(ch['co2'])} ppm > {int(ch.get('co2_max'))} ppm")
+    return ", ".join(r)
+
+
+def dev_label(device_id: str) -> str:
+    d = DEVICES.get(device_id, {})
+    return f"{d.get('client_name', '')} / {d.get('name', device_id)}"
+
+
+# ============================================================
+# Gateway
+# ============================================================
 class Gateway:
     def __init__(self):
         self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.ws_clients: set[WebSocket] = set()
-        self.latest_state: Optional[dict] = None
-        self.last_seen: Optional[float] = None
+        self.ws_clients: dict = {}  # ws -> user
+        self.states: dict = {}
+        self.last_seen: dict = {}
         self.connected = False
         self.mc: Optional[mqtt.Client] = None
 
@@ -347,163 +354,138 @@ class Gateway:
 
     def _on_connect(self, c, u, flags, rc, props):
         self.connected = True
-        logger.info("GATEWAY connected rc=%s", rc)
-        c.subscribe(state_topic(DEVICE_ID), qos=1)
-        self._schedule_event("info", "Połączono z brokerem MQTT", {"host": MQTT_HOST})
+        c.subscribe(f"{MQTT_PREFIX}/+/state", qos=1)
+        self.schedule(log_event("info", "Połączono z brokerem MQTT", {"host": MQTT_HOST}))
 
     def _on_disconnect(self, c, u, flags, rc, props):
         self.connected = False
-        logger.warning("GATEWAY disconnected rc=%s", rc)
-        self._schedule_event("warning", "Rozłączono z brokerem MQTT", {})
 
     def _on_message(self, c, u, msg):
-        if msg.topic != state_topic(DEVICE_ID):
+        parts = msg.topic.split("/")
+        if len(parts) < 2 or "/".join(parts[:-2]) != MQTT_PREFIX or parts[-1] != "state":
+            return
+        device_id = parts[-2]
+        if device_id not in DEVICES:
             return
         try:
-            payload = sanitize_state(json.loads(msg.payload.decode()))
+            payload = sanitize_state(json.loads(msg.payload.decode()), device_id)
         except Exception:
             return
         if payload is None:
             return
-        prev = self.latest_state
-        self.annotate(payload)
-        self.latest_state = payload
-        self.last_seen = time.time()
-        self._detect_alarms(prev, payload)
-        self._schedule_persist(msg.topic, payload)
-        self._schedule_broadcast({"type": "state", "topic": msg.topic, "payload": payload})
+        prev = self.states.get(device_id)
+        annotate(device_id, payload)
+        self.states[device_id] = payload
+        self.last_seen[device_id] = time.time()
+        self.detect_alarms(device_id, prev, payload)
+        self.schedule(broadcast({"type": "state", "payload": payload}, DEVICES[device_id]["client_id"]))
 
-    def annotate(self, payload):
-        """Overlay the monitoring app's alarm thresholds onto each chamber."""
-        for ch in payload.get("chambers", []):
-            th = THRESHOLDS.get(ch["id"], {})
-            tmax = th.get("temp_max")
-            cmax = th.get("co2_max")
-            ch["temp_max"] = tmax
-            ch["co2_max"] = cmax
-            ch["temp_alarm"] = bool(ch.get("on") and tmax is not None and ch["temp"] > tmax)
-            ch["co2_alarm"] = bool(cmax is not None and ch["co2"] > cmax)
-            ch["alarm"] = bool(ch["temp_alarm"] or ch["co2_alarm"])
-        return payload
-
-    def _detect_alarms(self, prev, cur):
-        if not cur.get("chambers"):
-            return
-        prev_map = {c["id"]: c for c in (prev.get("chambers", []) if prev else [])}
+    def detect_alarms(self, device_id, prev, cur):
+        was = {c["id"]: c.get("alarm") for c in (prev or {}).get("chambers", [])}
         for ch in cur["chambers"]:
-            was = prev_map.get(ch["id"], {}).get("alarm", False)
-            if ch.get("alarm") and not was:
-                reasons = []
-                if ch.get("temp_alarm"):
-                    reasons.append(f"temp {ch['temp']}°C > {ch.get('temp_max')}°C")
-                if ch.get("co2_alarm"):
-                    reasons.append(f"CO₂ {int(ch['co2'])} > {int(ch.get('co2_max'))} ppm")
-                reason = ", ".join(reasons)
-                title = f"ALARM: {ch['name']}"
-                self._schedule_event("warning", f"{title} — {reason}", {"chamber": ch["id"]})
-                self._schedule_broadcast({"type": "alarm", "chamber": ch["id"],
-                                          "title": title, "body": reason})
+            if ch["alarm"] and not was.get(ch["id"]):
+                title = f"ALARM: {dev_label(device_id)} – Komora {ch['id'] + 1}"
+                reason = alarm_reason(ch)
+                self.schedule(log_event("warning", f"{title} — {reason}", {"chamber": ch["id"]}, device_id))
+                self.schedule(broadcast({"type": "alarm", "device_id": device_id, "title": title, "body": reason},
+                                        DEVICES[device_id]["client_id"]))
 
-    def _schedule_persist(self, topic, payload):
+    def schedule(self, coro):
         if self.loop and not self.loop.is_closed():
-            asyncio.run_coroutine_threadsafe(self._persist(topic, payload), self.loop)
-
-    def _schedule_broadcast(self, data):
-        if self.loop and not self.loop.is_closed():
-            asyncio.run_coroutine_threadsafe(broadcast(self, data), self.loop)
-
-    def _schedule_event(self, level, message, meta):
-        if self.loop and not self.loop.is_closed():
-            asyncio.run_coroutine_threadsafe(self._event(level, message, meta), self.loop)
-
-    async def _persist(self, topic, payload):
-        doc = {"device_id": payload.get("device_id", DEVICE_ID), "topic": topic,
-               "payload": payload, "received_at": now_iso()}
-        await db.plc_states.insert_one(doc)
-
-    async def _event(self, level, message, meta):
-        doc = {"level": level, "message": message, "meta": meta, "ts": now_iso()}
-        await db.plc_events.insert_one(doc)
-        d = dict(doc)
-        d.pop("_id", None)
-        await broadcast(self, {"type": "event", "event": d})
-
-    def log_event_sync(self, level, message, meta):
-        self._schedule_event(level, message, meta)
+            asyncio.run_coroutine_threadsafe(coro, self.loop)
+        else:
+            coro.close()
 
     def publish_command(self, device_id: str, cmd: dict) -> bool:
-        info = self.mc.publish(command_topic(device_id), json.dumps(cmd), qos=1)
-        return info.rc == mqtt.MQTT_ERR_SUCCESS
+        return self.mc.publish(command_topic(device_id), json.dumps(cmd), qos=1).rc == mqtt.MQTT_ERR_SUCCESS
 
-    def is_online(self) -> bool:
-        return self.last_seen is not None and (time.time() - self.last_seen) < 10
-
-    def start(self, loop):
-        self.loop = loop
-        self.mqtt_start()
-
-    def stop(self):
-        self.mqtt_stop()
+    def is_online(self, device_id: str) -> bool:
+        t = self.last_seen.get(device_id)
+        return t is not None and time.time() - t < 10
 
 
 gateway = Gateway()
-simulator = PiggerySimulator()
+sims = SimManager()
 
 
-async def broadcast(gw: Gateway, data: dict):
-    dead = []
-    for ws in list(gw.ws_clients):
+async def broadcast(data: dict, client_id: Optional[str]):
+    for ws, user in list(gateway.ws_clients.items()):
+        if user["role"] != "superadmin" and user.get("client_id") != client_id:
+            continue
         try:
             await ws.send_json(data)
         except Exception:
-            dead.append(ws)
-    for ws in dead:
-        gw.ws_clients.discard(ws)
+            gateway.ws_clients.pop(ws, None)
 
 
-async def load_thresholds():
-    global THRESHOLDS
-    THRESHOLDS = dict(DEFAULT_THRESHOLDS)
-    async for doc in db.chamber_thresholds.find({}):
-        THRESHOLDS[doc["chamber"]] = {"temp_max": doc["temp_max"], "co2_max": doc["co2_max"]}
+async def log_event(level: str, message: str, meta: dict, device_id: Optional[str] = None,
+                    client_id: Optional[str] = None):
+    if device_id and not client_id:
+        client_id = DEVICES.get(device_id, {}).get("client_id")
+    doc = {"level": level, "message": message, "meta": meta, "device_id": device_id, "client_id": client_id,
+           "ts": now_iso()}
+    await db.plc_events.insert_one(doc)
+    doc.pop("_id", None)
+    if client_id:
+        await broadcast({"type": "event", "event": doc}, client_id)
+    else:
+        for ws, user in list(gateway.ws_clients.items()):
+            if user["role"] == "superadmin":
+                try:
+                    await ws.send_json({"type": "event", "event": doc})
+                except Exception:
+                    gateway.ws_clients.pop(ws, None)
+
+
+# ============================================================
+# Registry, migration, background tasks
+# ============================================================
+async def load_registry():
+    clients = {str(c["_id"]): c["name"] async for c in db.clients.find({})}
+    DEVICES.clear()
+    async for d in db.devices.find({}):
+        DEVICES[d["device_id"]] = {"client_id": d["client_id"], "client_name": clients.get(d["client_id"], "?"),
+                                   "name": d["name"], "chambers": d["chambers"], "simulated": d.get("simulated", False)}
+    THRESHOLDS.clear()
+    async for t in db.device_thresholds.find({}):
+        THRESHOLDS[(t["device_id"], t["chamber"])] = {"temp_max": t["temp_max"], "co2_max": t["co2_max"]}
+    for d in list(gateway.states):
+        if d not in DEVICES or len(gateway.states[d]["chambers"]) != DEVICES[d]["chambers"]:
+            gateway.states.pop(d, None)
+
+
+async def migrate_legacy():
+    if await db.devices.count_documents({}) or await db.clients.count_documents({}):
+        return
+    res = await db.clients.insert_one({"name": "Marco Polo", "created_at": now_iso()})
+    cid = str(res.inserted_id)
+    await db.devices.insert_one({"client_id": cid, "name": "Sterownik 1", "device_id": LEGACY_DEVICE, "chambers": 3,
+                                 "simulated": True, "mqtt_username": LEGACY_DEVICE, "mqtt_password_enc": "",
+                                 "created_at": now_iso()})
+    async for t in db.chamber_thresholds.find({}):
+        await db.device_thresholds.update_one({"device_id": LEGACY_DEVICE, "chamber": t["chamber"]},
+                                              {"$set": {"temp_max": t["temp_max"], "co2_max": t["co2_max"]}}, upsert=True)
+    for coll in ("plc_history", "plc_plant_history", "plc_events"):
+        await db[coll].update_many({"device_id": {"$exists": False}}, {"$set": {"device_id": LEGACY_DEVICE}})
+    await db.plc_events.update_many({"client_id": {"$exists": False}}, {"$set": {"client_id": cid}})
+    alarm = await db.alarm_settings.find_one({"_id": "main"})
+    if alarm:
+        await db.alarm_settings.insert_one({**alarm, "_id": cid})
+    await db.users.update_many({"role": {"$ne": "superadmin"}, "client_id": {"$exists": False}}, {"$set": {"client_id": cid}})
 
 
 def set_broker_globals(cfg: dict):
-    global MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS, MQTT_PREFIX, DEVICE_ID
-    MQTT_HOST = cfg["host"]
-    MQTT_PORT = int(cfg["port"])
-    MQTT_USER = cfg.get("username") or ""
-    MQTT_PASS = cfg.get("password") or ""
-    MQTT_TLS = bool(cfg.get("tls"))
-    MQTT_PREFIX = cfg["prefix"].strip("/")
-    DEVICE_ID = cfg["device_id"]
-
-
-FERNET = Fernet(os.environ["BROKER_SECRET"].encode())
-
-
-def encrypt_secret(v: str) -> str:
-    return FERNET.encrypt(v.encode()).decode() if v else ""
-
-
-def decrypt_secret(v: str) -> str:
-    try:
-        return FERNET.decrypt(v.encode()).decode() if v else ""
-    except InvalidToken:
-        logger.warning("broker password could not be decrypted")
-        return ""
+    global MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS, MQTT_PREFIX
+    MQTT_HOST, MQTT_PORT = cfg["host"], int(cfg["port"])
+    MQTT_USER, MQTT_PASS = cfg.get("username") or "", cfg.get("password") or ""
+    MQTT_TLS, MQTT_PREFIX = bool(cfg.get("tls")), cfg["prefix"].strip("/")
 
 
 async def load_broker():
     doc = await db.broker_config.find_one({"_id": "main"})
-    if not doc:
-        return
-    if "password" in doc:  # migrate legacy plaintext
-        doc["password_enc"] = encrypt_secret(doc.pop("password") or "")
-        await db.broker_config.update_one({"_id": "main"}, {"$set": {"password_enc": doc["password_enc"]},
-                                                           "$unset": {"password": ""}})
-    doc["password"] = decrypt_secret(doc.get("password_enc", ""))
-    set_broker_globals(doc)
+    if doc:
+        doc["password"] = decrypt_secret(doc.get("password_enc", ""))
+        set_broker_globals(doc)
 
 
 def is_public_host(host: str, port: int) -> bool:
@@ -511,118 +493,97 @@ def is_public_host(host: str, port: int) -> bool:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
         return False
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global or ip.is_multicast:
-            return False
-    return bool(infos)
+    return bool(infos) and all(ipaddress.ip_address(i[4][0]).is_global for i in infos)
 
 
-ALARM_REMIND_S = 30 * 60
-alarm_active: dict = {}  # chamber id -> last notification epoch
+async def history_sampler():
+    while True:
+        await asyncio.sleep(SAMPLE_S)
+        ts = now_iso()
+        for device_id, st in list(gateway.states.items()):
+            if not gateway.is_online(device_id):
+                continue
+            docs = [{"device_id": device_id, "chamber": ch["id"], **{k: ch[k] for k in NUM_FIELDS if k != "setpoint"},
+                     "ts": ts} for ch in st["chambers"]]
+            try:
+                await db.plc_history.insert_many(docs)
+                if st.get("plant"):
+                    await db.plc_plant_history.insert_one({"device_id": device_id, "power_kw": st["plant"].get("power_kw"),
+                                                           "water_lpm": st["plant"].get("water_lpm"), "ts": ts})
+            except Exception as e:
+                logger.warning("history insert failed: %s", e)
 
 
-def alarm_reason(ch: dict) -> str:
-    r = []
-    if ch.get("temp_alarm"):
-        r.append(f"temperatura {ch['temp']}°C > {ch.get('temp_max')}°C")
-    if ch.get("co2_alarm"):
-        r.append(f"CO₂ {int(ch['co2'])} ppm > {int(ch.get('co2_max'))} ppm")
-    return ", ".join(r)
-
-
-async def send_alarm(subject: str, body: str, kind: str):
-    """Delivery channel not configured yet: notifications are MOCKED (stored + logged only)."""
-    cfg = await db.alarm_settings.find_one({"_id": "main"}) or {}
-    recipients = cfg.get("recipients", []) if cfg.get("enabled", True) else []
-    if not recipients:
-        return
-    ts = now_iso()
-    await db.alarm_notifications.insert_many([
-        {"ts": ts, "kind": kind, "channel": r["type"], "to": r["value"], "subject": subject, "body": body,
-         "status": "mocked"} for r in recipients])
-    logger.info("ALARM NOTIFY (mocked) %s -> %s", subject, [r["value"] for r in recipients])
-    await gateway._event("info", f"Powiadomienie ({len(recipients)} odb., tryb testowy): {subject}", {"kind": kind})
+alarm_active: dict = {}  # "device:chamber" -> last notification epoch
 
 
 async def save_alarm_state():
     await db.alarm_state.update_one({"_id": "main"}, {"$set": {"active": alarm_active}}, upsert=True)
 
 
+async def send_alarm(client_id: str, subject: str, body: str, kind: str):
+    """Delivery channel not configured yet: notifications are MOCKED (stored + logged only)."""
+    cfg = await db.alarm_settings.find_one({"_id": client_id}) or {}
+    recipients = cfg.get("recipients", []) if cfg.get("enabled", True) else []
+    if not recipients:
+        return
+    ts = now_iso()
+    await db.alarm_notifications.insert_many([
+        {"client_id": client_id, "ts": ts, "kind": kind, "channel": r["type"], "to": r["value"], "subject": subject,
+         "body": body, "status": "mocked"} for r in recipients])
+    logger.info("ALARM NOTIFY (mocked) %s -> %s", subject, [r["value"] for r in recipients])
+    await log_event("info", f"Powiadomienie ({len(recipients)} odb., tryb testowy): {subject}", {"kind": kind},
+                    client_id=client_id)
+
+
 async def alarm_notifier():
     doc = await db.alarm_state.find_one({"_id": "main"}) or {}
-    alarm_active.update(doc.get("active", {}))
+    alarm_active.update({k: v for k, v in doc.get("active", {}).items() if ":" in k})
     while True:
         await asyncio.sleep(5)
-        st = gateway.latest_state
-        if not st or not gateway.is_online():
-            continue
         now = time.time()
         try:
-            for ch in st.get("chambers", []):
-                cid, name = ch["id"], f"Komora {ch['id'] + 1}"
-                key = str(cid)
-                if ch.get("alarm"):
+            for device_id, st in list(gateway.states.items()):
+                if not gateway.is_online(device_id) or device_id not in DEVICES:
+                    continue
+                cid = DEVICES[device_id]["client_id"]
+                for ch in st["chambers"]:
+                    key, name = f"{device_id}:{ch['id']}", f"{dev_label(device_id)} – Komora {ch['id'] + 1}"
                     last = alarm_active.get(key)
-                    if last is None:
-                        alarm_active[key] = now
+                    if ch.get("alarm"):
+                        if last is None or now - last >= ALARM_REMIND_S:
+                            alarm_active[key] = now
+                            await save_alarm_state()
+                            subj = f"ALARM: {name}" if last is None else f"PRZYPOMNIENIE – ALARM trwa: {name}"
+                            await send_alarm(cid, subj, alarm_reason(ch), "alarm" if last is None else "reminder")
+                    elif last is not None:
+                        alarm_active.pop(key)
                         await save_alarm_state()
-                        await send_alarm(f"ALARM: {name}", alarm_reason(ch), "alarm")
-                    elif now - last >= ALARM_REMIND_S:
-                        alarm_active[key] = now
-                        await save_alarm_state()
-                        await send_alarm(f"PRZYPOMNIENIE – ALARM trwa: {name}", alarm_reason(ch), "reminder")
-                elif key in alarm_active:
-                    alarm_active.pop(key)
-                    await save_alarm_state()
-                    await send_alarm(f"Koniec alarmu: {name}", f"Temp {ch['temp']}°C, CO₂ {int(ch['co2'])} ppm", "cleared")
+                        await send_alarm(cid, f"Koniec alarmu: {name}",
+                                         f"Temp {ch['temp']}°C, CO₂ {int(ch['co2'])} ppm", "cleared")
         except Exception as e:
             logger.warning("alarm notifier failed: %s", e)
 
 
-async def history_sampler():
-    """Persist a downsampled history point per chamber every 15s for charts."""
-    while True:
-        await asyncio.sleep(15)
-        st = gateway.latest_state
-        if not st or not st.get("chambers") or not gateway.is_online():
-            continue
-        ts = now_iso()
-        docs = [{"chamber": ch["id"], "name": ch["name"], "temp": ch["temp"],
-                 "humidity": ch["humidity"], "co2": ch["co2"],
-                 "curtain_left": ch.get("curtain_left"), "curtain_right": ch.get("curtain_right"),
-                 "chimney": ch.get("chimney"), "ts": ts}
-                for ch in st["chambers"]]
-        plant = st.get("plant") or {}
-        try:
-            await db.plc_history.insert_many(docs)
-            if plant:
-                await db.plc_plant_history.insert_one(
-                    {"power_kw": plant.get("power_kw"), "water_lpm": plant.get("water_lpm"), "ts": ts})
-        except Exception as e:
-            logger.warning("history insert failed: %s", e)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    loop = asyncio.get_running_loop()
+    gateway.loop = asyncio.get_running_loop()
     auth.init(db)
     await auth.setup()
-    await load_thresholds()
+    await migrate_legacy()
     await load_broker()
-    try:
-        await db.plc_history.create_index("ts")
-    except Exception:
-        pass
-    gateway.start(loop)
-    simulator.start()
-    sampler = asyncio.create_task(history_sampler())
-    notifier = asyncio.create_task(alarm_notifier())
+    await load_registry()
+    await db.plc_history.create_index([("device_id", 1), ("ts", 1)])
+    await db.plc_plant_history.create_index([("device_id", 1), ("ts", 1)])
+    await db.devices.create_index("device_id", unique=True)
+    gateway.mqtt_start()
+    sims.sync()
+    tasks = [asyncio.create_task(history_sampler()), asyncio.create_task(alarm_notifier())]
     yield
-    sampler.cancel()
-    notifier.cancel()
-    simulator.stop()
-    gateway.stop()
+    for t in tasks:
+        t.cancel()
+    sims.stop_all()
+    gateway.mqtt_stop()
     client.close()
 
 
@@ -630,10 +591,50 @@ app = FastAPI(lifespan=lifespan)
 api = APIRouter(prefix="/api")
 
 
+# ============================================================
+# Access helpers
+# ============================================================
+def visible(user: dict, device_id: str) -> bool:
+    d = DEVICES.get(device_id)
+    return bool(d) and (user["role"] == "superadmin" or d["client_id"] == user.get("client_id"))
+
+
+def device_or_404(user: dict, device_id: str) -> dict:
+    if not visible(user, device_id):
+        raise HTTPException(404, "Device not found")
+    return DEVICES[device_id]
+
+
+def client_scope(user: dict, client_id: Optional[str]) -> str:
+    if user["role"] == "superadmin":
+        if not client_id or not ObjectId.is_valid(client_id):
+            raise HTTPException(422, "client_id required")
+        return client_id
+    return user.get("client_id")
+
+
+def device_view(device_id: str, user: dict) -> dict:
+    d = DEVICES[device_id]
+    out = {"device_id": device_id, "name": d["name"], "client_id": d["client_id"], "client_name": d["client_name"],
+           "chambers": d["chambers"], "simulated": d["simulated"], "online": gateway.is_online(device_id),
+           "state": gateway.states.get(device_id)}
+    if user["role"] == "superadmin":
+        out.update({"state_topic": state_topic(device_id), "command_topic": command_topic(device_id)})
+    return out
+
+
+# ============================================================
+# Models
+# ============================================================
 class CommandIn(BaseModel):
     type: str = Field(pattern=r"^(set_setpoint|chamber_power|set_mode|set_vent)$")
-    chamber: int = Field(ge=0, le=2)
+    chamber: int = Field(ge=0, le=9)
     value: Any = None
+
+
+class ThresholdIn(BaseModel):
+    temp_max: float = Field(ge=-20, le=60)
+    co2_max: float = Field(ge=300, le=20000)
 
 
 class BrokerIn(BaseModel):
@@ -642,165 +643,24 @@ class BrokerIn(BaseModel):
     username: str = Field(default="", max_length=128)
     password: Optional[str] = Field(default=None, max_length=256)
     tls: bool = False
-    prefix: str = Field(min_length=1, max_length=128, pattern=r"^[^#+]+$")
-    device_id: str = Field(min_length=1, max_length=64, pattern=r"^[^/#+]+$")
+    prefix: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_\-/]+$")
 
 
-class ThresholdIn(BaseModel):
-    temp_max: float
-    co2_max: float
+class ClientIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
 
 
-@api.get("/")
-async def root():
-    return {"message": "Fatek MQTT piggery gateway"}
+class DeviceIn(BaseModel):
+    client_id: str
+    name: str = Field(min_length=1, max_length=80)
+    device_id: str = Field(min_length=3, max_length=48, pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    chambers: int = Field(ge=1, le=10)
+    simulated: bool = False
 
 
-@api.get("/config", dependencies=[Depends(require("viewer"))])
-async def get_config():
-    return {
-        "broker_host": MQTT_HOST,
-        "broker_port": MQTT_PORT,
-        "username": MQTT_USER,
-        "has_password": bool(MQTT_PASS),
-        "tls": MQTT_TLS,
-        "prefix": MQTT_PREFIX,
-        "device_id": DEVICE_ID,
-        "state_topic": state_topic(DEVICE_ID),
-        "command_topic": command_topic(DEVICE_ID),
-        "chambers": len(simulator.chambers),
-    }
-
-
-@api.get("/health", dependencies=[Depends(require("viewer"))])
-async def health():
-    return {
-        "ok": True,
-        "broker_connected": gateway.connected,
-        "device_online": gateway.is_online(),
-        "simulator_enabled": simulator.enabled,
-    }
-
-
-@api.get("/device/{device_id}/state", dependencies=[Depends(require("viewer"))])
-async def device_state(device_id: str):
-    if gateway.latest_state:
-        return {"online": gateway.is_online(), "state": gateway.latest_state}
-    doc = await db.plc_states.find_one({"device_id": device_id}, sort=[("received_at", -1)])
-    if not doc:
-        return {"online": False, "state": None}
-    doc.pop("_id", None)
-    return {"online": gateway.is_online(), "state": doc.get("payload")}
-
-
-@api.post("/device/{device_id}/command")
-async def device_command(device_id: str, cmd: CommandIn, user: dict = Depends(require("operator"))):
-    if "/" in device_id or len(device_id) > 64:
-        raise HTTPException(400, "invalid device_id")
-    if cmd.type == "set_setpoint" and (isinstance(cmd.value, bool) or not isinstance(cmd.value, (int, float))):
-        raise HTTPException(422, "value must be a number")
-    if cmd.type == "set_mode" and cmd.value not in ("auto", "manual"):
-        raise HTTPException(422, "value must be auto|manual")
-    if cmd.type == "set_vent":
-        v = cmd.value
-        if not isinstance(v, dict) or not v or any(
-                k not in ("curtain_left", "curtain_right", "chimney") or isinstance(x, bool)
-                or not isinstance(x, (int, float)) or not 0 <= x <= 100 for k, x in v.items()):
-            raise HTTPException(422, "invalid vent values")
-    body = cmd.model_dump()
-    body["request_id"] = uuid.uuid4().hex
-    if not gateway.publish_command(device_id, body):
-        raise HTTPException(503, "MQTT publish failed")
-    name = f"Komora {cmd.chamber + 1}"
-    if cmd.type == "set_setpoint":
-        msg = f"{name}: nastawa = {cmd.value}°C"
-    elif cmd.type == "set_mode":
-        msg = f"{name}: tryb {'RĘCZNY' if cmd.value == 'manual' else 'AUTO'}"
-    elif cmd.type == "set_vent":
-        lbl = {"curtain_left": "kurtyna L zamkn.", "curtain_right": "kurtyna P zamkn.", "chimney": "komin otw."}
-        msg = f"{name}: " + ", ".join(
-            f"{lbl[k]} {round(100 - x) if k != 'chimney' else round(x)}%" for k, x in cmd.value.items())
-    else:
-        msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
-    gateway.log_event_sync("command", msg, {**body, "user": user["email"]})
-    return {"queued": True, "request_id": body["request_id"]}
-
-
-@api.get("/events", dependencies=[Depends(require("viewer"))])
-async def events(limit: int = 100):
-    limit = max(1, min(500, limit))
-    docs = await db.plc_events.find({}, {"_id": 0}).sort("ts", -1).to_list(limit)
-    return {"events": docs}
-
-
-@api.post("/simulator/toggle")
-async def simulator_toggle(enable: bool = True, user: dict = Depends(require("admin"))):
-    simulator.enabled = enable
-    gateway.log_event_sync("info", f"Symulator {'włączony' if enable else 'wyłączony'}", {"user": user["email"]})
-    return {"simulator_enabled": simulator.enabled}
-
-
-@api.get("/thresholds", dependencies=[Depends(require("viewer"))])
-async def get_thresholds():
-    return {"thresholds": [{"chamber": k, **v} for k, v in sorted(THRESHOLDS.items())]}
-
-
-@api.put("/thresholds/{chamber}")
-async def set_threshold(chamber: int, body: ThresholdIn, user: dict = Depends(require("operator"))):
-    if chamber not in DEFAULT_THRESHOLDS:
-        raise HTTPException(404, "unknown chamber")
-    body.temp_max = round(body.temp_max, 1)
-    body.co2_max = float(round(body.co2_max))
-    THRESHOLDS[chamber] = {"temp_max": body.temp_max, "co2_max": body.co2_max}
-    await db.chamber_thresholds.update_one(
-        {"chamber": chamber},
-        {"$set": {"chamber": chamber, "temp_max": body.temp_max, "co2_max": body.co2_max}},
-        upsert=True,
-    )
-    gateway.log_event_sync(
-        "info", f"Komora {chamber + 1}: progi temp ≤ {body.temp_max}°C, CO₂ ≤ {int(body.co2_max)} ppm",
-        {"user": user["email"]})
-    # re-evaluate current state against new thresholds immediately
-    if gateway.latest_state:
-        prev = copy.deepcopy(gateway.latest_state)
-        gateway.annotate(gateway.latest_state)
-        gateway._detect_alarms(prev, gateway.latest_state)
-    return {"ok": True, "thresholds": THRESHOLDS[chamber]}
-
-
-@api.get("/history", dependencies=[Depends(require("viewer"))])
-async def history(hours: int = 3):
-    hours = max(1, min(24, hours))
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    docs = await db.plc_history.find(
-        {"ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1).to_list(6000)
-    out: dict = {}
-    for d in docs:
-        out.setdefault(str(d["chamber"]), []).append(d)
-    plant = await db.plc_plant_history.find(
-        {"ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1).to_list(2000)
-    return {"history": out, "plant": plant}
-
-
-@api.put("/broker")
-async def set_broker(body: BrokerIn, user: dict = Depends(require("admin"))):
-    cfg = body.model_dump()
-    if not await asyncio.to_thread(is_public_host, cfg["host"], cfg["port"]):
-        raise HTTPException(422, "Broker host must resolve to a public address")
-    if cfg["password"] is None:
-        cfg["password"] = MQTT_PASS
-    stored = {k: v for k, v in cfg.items() if k != "password"}
-    stored["password_enc"] = encrypt_secret(cfg["password"])
-    await db.broker_config.update_one({"_id": "main"}, {"$set": stored, "$unset": {"password": ""}}, upsert=True)
-    await asyncio.to_thread(gateway.mqtt_stop)
-    await asyncio.to_thread(simulator.mqtt_stop)
-    set_broker_globals(cfg)
-    gateway.latest_state = None
-    gateway.last_seen = None
-    gateway.mqtt_start()
-    simulator.mqtt_start()
-    gateway.log_event_sync("info", f"Zmieniono broker: {MQTT_HOST}:{MQTT_PORT}", {"user": user["email"]})
-    return await get_config()
+class DevicePatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    simulated: Optional[bool] = None
 
 
 class Recipient(BaseModel):
@@ -817,16 +677,276 @@ EMAIL_RX = r"^[^@\s;,]+@[^@\s;,]+\.[^@\s;,]+$"
 PHONE_RX = r"^\+?[0-9]{9,15}$"
 
 
-@api.get("/alarm-settings", dependencies=[Depends(require("admin"))])
-async def get_alarm_settings():
-    cfg = await db.alarm_settings.find_one({"_id": "main"}, {"_id": 0}) or {}
-    sent = await db.alarm_notifications.find({}, {"_id": 0}).sort("ts", -1).to_list(10)
-    return {"enabled": cfg.get("enabled", True), "recipients": cfg.get("recipients", []),
+# ============================================================
+# Routes
+# ============================================================
+@api.get("/")
+async def root():
+    return {"message": "Fatek MQTT piggery gateway"}
+
+
+@api.get("/health")
+async def health(user: dict = Depends(require("viewer"))):
+    return {"ok": True, "broker_connected": gateway.connected}
+
+
+@api.get("/config")
+async def get_config(user: dict = Depends(require("viewer"))):
+    cfg = {"broker_host": MQTT_HOST, "broker_port": MQTT_PORT, "prefix": MQTT_PREFIX, "tls": MQTT_TLS}
+    if user["role"] == "superadmin":
+        cfg.update({"username": MQTT_USER, "has_password": bool(MQTT_PASS)})
+    return cfg
+
+
+@api.put("/broker")
+async def set_broker(body: BrokerIn, user: dict = Depends(require("superadmin"))):
+    cfg = body.model_dump()
+    if not await asyncio.to_thread(is_public_host, cfg["host"], cfg["port"]):
+        raise HTTPException(422, "Broker host must resolve to a public address")
+    if cfg["password"] is None:
+        cfg["password"] = MQTT_PASS
+    stored = {k: v for k, v in cfg.items() if k != "password"}
+    stored["password_enc"] = encrypt_secret(cfg["password"])
+    await db.broker_config.update_one({"_id": "main"}, {"$set": stored, "$unset": {"password": ""}}, upsert=True)
+    await asyncio.to_thread(gateway.mqtt_stop)
+    set_broker_globals(cfg)
+    gateway.states.clear()
+    gateway.last_seen.clear()
+    gateway.mqtt_start()
+    await asyncio.to_thread(sims.restart_mqtt)
+    await log_event("info", f"Zmieniono broker: {MQTT_HOST}:{MQTT_PORT}", {"user": user["email"]})
+    return await get_config(user)
+
+
+@api.get("/clients")
+async def list_clients(user: dict = Depends(require("superadmin"))):
+    out = []
+    async for c in db.clients.find({}).sort("name", 1):
+        cid = str(c["_id"])
+        out.append({"id": cid, "name": c["name"], "devices": sum(1 for d in DEVICES.values() if d["client_id"] == cid)})
+    return {"clients": out}
+
+
+@api.post("/clients")
+async def create_client(body: ClientIn, user: dict = Depends(require("superadmin"))):
+    res = await db.clients.insert_one({"name": body.name.strip(), "created_at": now_iso()})
+    await log_event("info", f"Dodano klienta: {body.name.strip()}", {"user": user["email"]}, client_id=str(res.inserted_id))
+    return {"id": str(res.inserted_id), "name": body.name.strip(), "devices": 0}
+
+
+@api.delete("/clients/{client_id}")
+async def delete_client(client_id: str, user: dict = Depends(require("superadmin"))):
+    if not ObjectId.is_valid(client_id):
+        raise HTTPException(404, "Client not found")
+    if any(d["client_id"] == client_id for d in DEVICES.values()):
+        raise HTTPException(409, "Client still has devices")
+    res = await db.clients.delete_one({"_id": ObjectId(client_id)})
+    if not res.deleted_count:
+        raise HTTPException(404, "Client not found")
+    await db.users.delete_many({"client_id": client_id})
+    await db.alarm_settings.delete_one({"_id": client_id})
+    return {"ok": True}
+
+
+@api.get("/devices")
+async def list_devices(user: dict = Depends(require("viewer"))):
+    ids = sorted((d for d in DEVICES if visible(user, d)), key=lambda d: (DEVICES[d]["client_name"], DEVICES[d]["name"]))
+    return {"devices": [device_view(d, user) for d in ids]}
+
+
+@api.post("/devices")
+async def create_device(body: DeviceIn, user: dict = Depends(require("superadmin"))):
+    if not ObjectId.is_valid(body.client_id) or not await db.clients.find_one({"_id": ObjectId(body.client_id)}):
+        raise HTTPException(422, "Unknown client")
+    if body.device_id in DEVICES:
+        raise HTTPException(409, "Device ID already exists")
+    password = secrets.token_urlsafe(18)
+    await db.devices.insert_one({**body.model_dump(), "name": body.name.strip(), "mqtt_username": body.device_id,
+                                 "mqtt_password_enc": encrypt_secret(password), "created_at": now_iso()})
+    await load_registry()
+    sims.sync()
+    await log_event("info", f"Dodano sterownik: {dev_label(body.device_id)} ({body.chambers} kom.)",
+                    {"user": user["email"]}, body.device_id)
+    return {**device_view(body.device_id, user), "mqtt_username": body.device_id, "mqtt_password": password}
+
+
+@api.get("/devices/{device_id}/credentials")
+async def device_credentials(device_id: str, user: dict = Depends(require("superadmin"))):
+    d = await db.devices.find_one({"device_id": device_id})
+    if not d:
+        raise HTTPException(404, "Device not found")
+    return {"mqtt_username": d.get("mqtt_username", device_id), "mqtt_password": decrypt_secret(d.get("mqtt_password_enc", "")),
+            "state_topic": state_topic(device_id), "command_topic": command_topic(device_id),
+            "broker_host": MQTT_HOST, "broker_port": MQTT_PORT, "tls": MQTT_TLS}
+
+
+@api.patch("/devices/{device_id}")
+async def patch_device(device_id: str, body: DevicePatch, user: dict = Depends(require("superadmin"))):
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    res = await db.devices.update_one({"device_id": device_id}, {"$set": upd})
+    if not res.matched_count:
+        raise HTTPException(404, "Device not found")
+    await load_registry()
+    sims.sync()
+    return device_view(device_id, user)
+
+
+@api.delete("/devices/{device_id}")
+async def delete_device(device_id: str, user: dict = Depends(require("superadmin"))):
+    if device_id not in DEVICES:
+        raise HTTPException(404, "Device not found")
+    label = dev_label(device_id)
+    cid = DEVICES[device_id]["client_id"]
+    await db.devices.delete_one({"device_id": device_id})
+    await db.device_thresholds.delete_many({"device_id": device_id})
+    await load_registry()
+    sims.sync()
+    gateway.states.pop(device_id, None)
+    await log_event("info", f"Usunięto sterownik: {label}", {"user": user["email"]}, client_id=cid)
+    return {"ok": True}
+
+
+@api.post("/devices/{device_id}/command")
+async def device_command(device_id: str, cmd: CommandIn, user: dict = Depends(require("operator"))):
+    d = device_or_404(user, device_id)
+    if cmd.chamber >= d["chambers"]:
+        raise HTTPException(422, "Unknown chamber")
+    if cmd.type == "set_setpoint" and (isinstance(cmd.value, bool) or not isinstance(cmd.value, (int, float))):
+        raise HTTPException(422, "value must be a number")
+    if cmd.type == "set_mode" and cmd.value not in ("auto", "manual"):
+        raise HTTPException(422, "value must be auto|manual")
+    if cmd.type == "set_vent":
+        v = cmd.value
+        if not isinstance(v, dict) or not v or any(
+                k not in VENT_FIELDS or not _num(x) or not 0 <= x <= 100 for k, x in v.items()):
+            raise HTTPException(422, "invalid vent values")
+    body = {**cmd.model_dump(), "request_id": uuid.uuid4().hex}
+    if not gateway.publish_command(device_id, body):
+        raise HTTPException(503, "MQTT publish failed")
+    name = f"{d['name']} – Komora {cmd.chamber + 1}"
+    if cmd.type == "set_setpoint":
+        msg = f"{name}: nastawa = {cmd.value}°C"
+    elif cmd.type == "set_mode":
+        msg = f"{name}: tryb {'RĘCZNY' if cmd.value == 'manual' else 'AUTO'}"
+    elif cmd.type == "set_vent":
+        lbl = {"curtain_left": "kurtyna L zamkn.", "curtain_right": "kurtyna P zamkn.", "chimney": "komin otw."}
+        msg = f"{name}: " + ", ".join(
+            f"{lbl[k]} {round(100 - x) if k != 'chimney' else round(x)}%" for k, x in cmd.value.items())
+    else:
+        msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
+    await log_event("command", msg, {**body, "user": user["email"]}, device_id)
+    return {"queued": True, "request_id": body["request_id"]}
+
+
+@api.get("/devices/{device_id}/thresholds")
+async def get_thresholds(device_id: str, user: dict = Depends(require("viewer"))):
+    d = device_or_404(user, device_id)
+    return {"thresholds": [{"chamber": i, **th_for(device_id, i)} for i in range(d["chambers"])]}
+
+
+@api.put("/devices/{device_id}/thresholds/{chamber}")
+async def set_threshold(device_id: str, chamber: int, body: ThresholdIn, user: dict = Depends(require("operator"))):
+    d = device_or_404(user, device_id)
+    if not 0 <= chamber < d["chambers"]:
+        raise HTTPException(404, "unknown chamber")
+    th = {"temp_max": round(body.temp_max, 1), "co2_max": float(round(body.co2_max))}
+    THRESHOLDS[(device_id, chamber)] = th
+    await db.device_thresholds.update_one({"device_id": device_id, "chamber": chamber}, {"$set": th}, upsert=True)
+    await log_event("info", f"{d['name']} – Komora {chamber + 1}: progi temp ≤ {th['temp_max']}°C, CO₂ ≤ {int(th['co2_max'])} ppm",
+                    {"user": user["email"]}, device_id)
+    st = gateway.states.get(device_id)
+    if st:
+        prev = copy.deepcopy(st)
+        annotate(device_id, st)
+        gateway.detect_alarms(device_id, prev, st)
+    return {"ok": True, "thresholds": th}
+
+
+@api.get("/devices/{device_id}/history")
+async def history(device_id: str, hours: int = 3, user: dict = Depends(require("viewer"))):
+    device_or_404(user, device_id)
+    since = (datetime.now(timezone.utc) - timedelta(hours=max(1, min(24, hours)))).isoformat()
+    q = {"device_id": device_id, "ts": {"$gte": since}}
+    docs = await db.plc_history.find(q, {"_id": 0}).sort("ts", 1).to_list(20000)
+    out: dict = {}
+    for doc in docs:
+        out.setdefault(str(doc["chamber"]), []).append(doc)
+    plant = await db.plc_plant_history.find(q, {"_id": 0}).sort("ts", 1).to_list(3000)
+    return {"history": out, "plant": plant}
+
+
+@api.get("/devices/{device_id}/usage/daily")
+async def usage_daily(device_id: str, days: int = 7, user: dict = Depends(require("viewer"))):
+    device_or_404(user, device_id)
+    days = max(1, min(60, days))
+    start = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date()
+    rows = await db.plc_plant_history.aggregate([
+        {"$match": {"device_id": device_id, "ts": {"$gte": start.isoformat()}}},
+        {"$group": {"_id": {"$substr": ["$ts", 0, 10]}, "p": {"$sum": "$power_kw"}, "w": {"$sum": "$water_lpm"}}},
+    ]).to_list(100)
+    by = {r["_id"]: r for r in rows}
+    out = []
+    for i in range(days):
+        day = (start + timedelta(days=i)).isoformat()
+        r = by.get(day, {"p": 0, "w": 0})
+        out.append({"date": day, "kwh": round(r["p"] * SAMPLE_S / 3600, 2),
+                    "water_m3": round(r["w"] * SAMPLE_S / 60 / 1000, 3)})
+    return {"days": out}
+
+
+@api.get("/devices/{device_id}/history/csv")
+async def history_csv(device_id: str, chamber: int, hours: int = 24, user: dict = Depends(require("viewer"))):
+    d = device_or_404(user, device_id)
+    if not 0 <= chamber < d["chambers"]:
+        raise HTTPException(404, "unknown chamber")
+    hours = max(1, min(24 * 31, hours))
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    cursor = db.plc_history.find({"device_id": device_id, "chamber": chamber, "ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1)
+
+    def fmt(v):
+        if v is None:
+            return ""
+        if not _num(v):
+            v = str(v)
+            return ("'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v).replace(";", " ")
+        return str(v).replace(".", ",")
+
+    async def gen():
+        yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_zamkn_%;kurtyna_P_zamkn_%;komin_otw_%\n"
+        async for doc in cursor:
+            cl, cr = doc.get("curtain_left"), doc.get("curtain_right")
+            ts = datetime.fromisoformat(doc["ts"]).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M:%S")
+            yield ";".join([ts, fmt(doc.get("temp")), fmt(doc.get("humidity")), fmt(doc.get("co2")),
+                            fmt(None if cl is None else round(100 - cl, 1)),
+                            fmt(None if cr is None else round(100 - cr, 1)), fmt(doc.get("chimney"))]) + "\n"
+
+    fname = f"{device_id}_komora{chamber + 1}_{hours}h_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return StreamingResponse(gen(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@api.get("/events")
+async def events(device_id: Optional[str] = None, limit: int = 100, user: dict = Depends(require("viewer"))):
+    q: dict = {} if user["role"] == "superadmin" else {"client_id": user.get("client_id")}
+    if device_id:
+        device_or_404(user, device_id)
+        q = {"$or": [{"device_id": device_id}, {"device_id": None, **q}]}
+    docs = await db.plc_events.find(q, {"_id": 0}).sort("ts", -1).to_list(max(1, min(500, limit)))
+    return {"events": docs}
+
+
+@api.get("/alarm-settings")
+async def get_alarm_settings(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    cid = client_scope(user, client_id)
+    cfg = await db.alarm_settings.find_one({"_id": cid}) or {}
+    sent = await db.alarm_notifications.find({"client_id": cid}, {"_id": 0}).sort("ts", -1).to_list(10)
+    return {"client_id": cid, "enabled": cfg.get("enabled", True), "recipients": cfg.get("recipients", []),
             "channel_configured": False, "reminder_min": ALARM_REMIND_S // 60, "recent": sent}
 
 
 @api.put("/alarm-settings")
-async def put_alarm_settings(body: AlarmSettingsIn, user: dict = Depends(require("admin"))):
+async def put_alarm_settings(body: AlarmSettingsIn, client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    cid = client_scope(user, client_id)
     recs = []
     for r in body.recipients:
         v = r.value.strip().lower() if r.type == "email" else re.sub(r"[\s-]", "", r.value)
@@ -834,92 +954,20 @@ async def put_alarm_settings(body: AlarmSettingsIn, user: dict = Depends(require
             raise HTTPException(422, f"invalid {r.type}: {r.value}")
         if not any(x["type"] == r.type and x["value"] == v for x in recs):
             recs.append({"type": r.type, "value": v})
-    await db.alarm_settings.update_one({"_id": "main"}, {"$set": {"enabled": body.enabled, "recipients": recs}}, upsert=True)
-    gateway.log_event_sync("info", f"Powiadomienia o alarmach {'WŁ.' if body.enabled else 'WYŁ.'}, odbiorcy: {len(recs)}",
-                           {"user": user["email"]})
-    return await get_alarm_settings()
+    await db.alarm_settings.update_one({"_id": cid}, {"$set": {"enabled": body.enabled, "recipients": recs}}, upsert=True)
+    await log_event("info", f"Powiadomienia o alarmach {'WŁ.' if body.enabled else 'WYŁ.'}, odbiorcy: {len(recs)}",
+                    {"user": user["email"]}, client_id=cid)
+    return await get_alarm_settings(cid, user)
 
 
 @api.post("/alarm-settings/test")
-async def test_alarm(user: dict = Depends(require("admin"))):
-    cfg = await db.alarm_settings.find_one({"_id": "main"}) or {}
+async def test_alarm(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    cid = client_scope(user, client_id)
+    cfg = await db.alarm_settings.find_one({"_id": cid}) or {}
     if not cfg.get("enabled", True) or not cfg.get("recipients"):
         raise HTTPException(409, "Notifications disabled or no recipients")
-    await send_alarm("TEST: Marco Polo Wentylacja", f"Powiadomienie testowe wysłane przez {user['email']}", "test")
-    return await get_alarm_settings()
-
-
-@api.get("/usage/daily", dependencies=[Depends(require("viewer"))])
-async def usage_daily(days: int = 7):
-    days = max(1, min(60, days))
-    start = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date()
-    rows = await db.plc_plant_history.aggregate([
-        {"$match": {"ts": {"$gte": start.isoformat()}}},
-        {"$group": {"_id": {"$substr": ["$ts", 0, 10]},
-                    "p": {"$sum": "$power_kw"}, "w": {"$sum": "$water_lpm"}}},
-    ]).to_list(100)
-    by = {r["_id"]: r for r in rows}
-    out = []
-    for i in range(days):
-        d = (start + timedelta(days=i)).isoformat()
-        r = by.get(d, {"p": 0, "w": 0})
-        out.append({"date": d, "kwh": round(r["p"] * SAMPLE_S / 3600, 2),
-                    "water_m3": round(r["w"] * SAMPLE_S / 60 / 1000, 3)})
-    return {"days": out}
-
-
-@api.get("/history/csv", dependencies=[Depends(require("viewer"))])
-async def history_csv(chamber: int, hours: int = 24):
-    if chamber not in DEFAULT_THRESHOLDS:
-        raise HTTPException(404, "unknown chamber")
-    hours = max(1, min(24 * 31, hours))
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    cursor = db.plc_history.find({"chamber": chamber, "ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1)
-
-    def fmt(v):
-        if v is None:
-            return ""
-        if not _num(v):
-            v = "'" + str(v) if str(v)[:1] in ("=", "+", "-", "@", "\t", "\r") else str(v)
-            return v.replace(";", " ")
-        return str(v).replace(".", ",")
-
-    async def gen():
-        yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_zamkn_%;kurtyna_P_zamkn_%;komin_otw_%\n"
-        async for d in cursor:
-            cl, cr = d.get("curtain_left"), d.get("curtain_right")
-            ts = datetime.fromisoformat(d["ts"]).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M:%S")
-            yield ";".join([ts, fmt(d.get("temp")), fmt(d.get("humidity")), fmt(d.get("co2")),
-                            fmt(None if cl is None else round(100 - cl, 1)),
-                            fmt(None if cr is None else round(100 - cr, 1)), fmt(d.get("chimney"))]) + "\n"
-
-    fname = f"komora{chamber + 1}_{hours}h_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-    return StreamingResponse(gen(), media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
-
-
-@app.websocket("/api/ws")
-async def websocket_endpoint(ws: WebSocket):
-    origin = ws.headers.get("origin")
-    user = await auth.user_from_token(ws.cookies.get("access_token"))
-    if not user or not origin_allowed(origin, ws.headers.get("host")):
-        await ws.close(code=4401)
-        return
-    await ws.accept()
-    gateway.ws_clients.add(ws)
-    if gateway.latest_state:
-        await ws.send_json({"type": "state", "topic": state_topic(DEVICE_ID),
-                            "payload": gateway.latest_state})
-    try:
-        while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        gateway.ws_clients.discard(ws)
-    except Exception:
-        gateway.ws_clients.discard(ws)
-
-
-FRONTEND_URL = os.environ["FRONTEND_URL"].rstrip("/")
+    await send_alarm(cid, "TEST: Marco Polo Wentylacja", f"Powiadomienie testowe wysłane przez {user['email']}", "test")
+    return await get_alarm_settings(cid, user)
 
 
 def origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
@@ -927,6 +975,26 @@ def origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
         return True
     origin = origin.rstrip("/")
     return origin == FRONTEND_URL or (bool(host) and origin.split("://", 1)[-1] == host)
+
+
+@app.websocket("/api/ws")
+async def websocket_endpoint(ws: WebSocket):
+    user = await auth.user_from_token(ws.cookies.get("access_token"))
+    if not user or not origin_allowed(ws.headers.get("origin"), ws.headers.get("host")):
+        await ws.close(code=4401)
+        return
+    await ws.accept()
+    gateway.ws_clients[ws] = user
+    for device_id, st in list(gateway.states.items()):
+        if visible(user, device_id):
+            await ws.send_json({"type": "state", "payload": st})
+    try:
+        while True:
+            await ws.receive_text()
+    except Exception:
+        pass
+    finally:
+        gateway.ws_clients.pop(ws, None)
 
 
 @app.middleware("http")

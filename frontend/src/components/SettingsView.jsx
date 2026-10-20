@@ -4,6 +4,7 @@ import { BrokerForm } from "@/components/BrokerForm";
 import { InstallCard } from "@/components/InstallCard";
 import { AccountCard, UsersCard } from "@/components/AccountCards";
 import { AlarmRecipientsCard } from "@/components/AlarmRecipientsCard";
+import { FleetCard } from "@/components/FleetCard";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
@@ -55,42 +56,40 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
 };
 
 
-export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, simOn, toggleSim, config, onConfigSaved, user, onLogout, canControl }) => (
-  <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="settings-view">
-    <AccountCard t={t} user={user} onLogout={onLogout} />
-    {canControl && <>
-      <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint}</div>
-      {chambers.map((ch) => (
-        <ChamberSettings key={ch.id} ch={ch} t={t} send={send} saveThreshold={saveThreshold}
-          th={thresholds.find((x) => x.chamber === ch.id)} />
-      ))}
-    </>}
+export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, config, onConfigSaved,
+  user, onLogout, canControl, dev, reloadDevices }) => {
+  const isAdmin = user.role === "admin" || user.role === "superadmin";
+  const clientId = user.role === "superadmin" ? dev?.client_id : undefined;
+  return (
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="settings-view">
+      <AccountCard t={t} user={user} onLogout={onLogout} />
+      {canControl && dev && chambers.length > 0 && <>
+        <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint} · {dev.client_name} · {dev.name}</div>
+        {chambers.map((ch) => (
+          <ChamberSettings key={`${dev.device_id}-${ch.id}`} ch={ch} t={t} send={send} saveThreshold={saveThreshold}
+            th={thresholds.find((x) => x.chamber === ch.id)} />
+        ))}
+      </>}
 
-    <div className="panel flex items-center justify-between" style={{ padding: "12px 16px" }}>
-      <span className="flex items-center gap-2" style={{ fontSize: 13 }}>
-        {notifPerm === "granted" ? <Bell size={15} /> : <BellOff size={15} />} {t.notifications}
-      </span>
-      {notifPerm === "granted" ? <span data-testid="notif-status" style={{ fontSize: 12, color: "var(--green)" }}>{t.notifOn}</span>
-        : notifPerm === "denied" ? <span data-testid="notif-status" style={{ fontSize: 12, color: "var(--accent)" }}>{t.notifBlocked}</span>
-        : notifPerm === "unsupported" ? <span data-testid="notif-status" style={{ fontSize: 12, color: "var(--muted)" }}>{t.notifUnsupported}</span>
-        : <button data-testid="notif-enable" className="action-btn" onClick={requestNotif} style={{ padding: "6px 12px", fontSize: 12 }}>{t.enableNotif}</button>}
+      <div className="panel flex items-center justify-between" style={{ padding: "12px 16px" }}>
+        <span className="flex items-center gap-2" style={{ fontSize: 13 }}>
+          {notifPerm === "granted" ? <Bell size={15} /> : <BellOff size={15} />} {t.notifications}
+        </span>
+        {notifPerm === "granted" ? <span data-testid="notif-status" style={{ fontSize: 12, color: "var(--green)" }}>{t.notifOn}</span>
+          : notifPerm === "denied" ? <span data-testid="notif-status" style={{ fontSize: 12, color: "var(--accent)" }}>{t.notifBlocked}</span>
+          : notifPerm === "unsupported" ? <span data-testid="notif-status" style={{ fontSize: 12, color: "var(--muted)" }}>{t.notifUnsupported}</span>
+          : <button data-testid="notif-enable" className="action-btn" onClick={requestNotif} style={{ padding: "6px 12px", fontSize: 12 }}>{t.enableNotif}</button>}
+      </div>
+
+      {isAdmin && (user.role !== "superadmin" || clientId) && <>
+        <AlarmRecipientsCard key={`a-${clientId}`} t={t} clientId={clientId} clientName={dev?.client_name} />
+        <UsersCard key={`u-${clientId}`} t={t} me={user} clientId={clientId} clientName={dev?.client_name} />
+      </>}
+      {user.role === "superadmin" && <>
+        <FleetCard t={t} reloadDevices={reloadDevices} />
+        <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
+      </>}
+      <InstallCard t={t} />
     </div>
-
-    {user.role === "admin" && <>
-    <div className="panel flex items-center justify-between" style={{ padding: "12px 16px" }}>
-      <span style={{ fontSize: 13 }}>{t.simulator}</span>
-      <button data-testid="sim-toggle" onClick={toggleSim} className="font-head"
-        style={{
-          background: simOn ? "rgba(48,209,88,0.15)" : "#1a1a1a", color: simOn ? "var(--green)" : "var(--muted)",
-          border: `1px solid ${simOn ? "var(--green)" : "var(--border)"}`, borderRadius: 6, padding: "4px 14px",
-          cursor: "pointer", fontWeight: 700, fontSize: 13,
-        }}>{simOn ? t.on : t.off}</button>
-    </div>
-
-    <AlarmRecipientsCard t={t} />
-    <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
-    <UsersCard t={t} me={user} />
-    </>}
-    <InstallCard t={t} />
-  </div>
-);
+  );
+};
