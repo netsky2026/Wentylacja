@@ -1,0 +1,48 @@
+{
+  "app_type": "dashboard",
+  "theme": "dark",
+  "archetype": "THE PERFORMANCE PRO / INDUSTRIAL AUTOMATION",
+  "typography": {
+    "heading": "Barlow Condensed, sans-serif",
+    "body": "JetBrains Mono, Inter, monospace"
+  },
+  "colors": {
+    "primary": "#007AFF",
+    "accent": "#FF3B30",
+    "background": "#0A0A0A",
+    "card_background": "#141414",
+    "border": "#262626",
+    "text": "#F5F5F7",
+    "muted": "#8E8E93"
+  },
+  "image_urls": [
+    {
+      "category": "hero_control_panel",
+      "description": "Industrial control room dashboard dark mode",
+      "url": "https://images.unsplash.com/photo-1607799632518-da91dd151b38?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxpbmR1c3RyaWFsJTIwYXV0b21hdGlvbiUyMGNvbnRyb2wlMjBwYW5lbCUyMGRhc2hib2FyZCUyMGRhcmslMjBtb2RlfGVufDB8fHx8MTc5MjQ5OTA4N3ww&ixlib=rb-4.1.0&q=85"
+    },
+    {
+      "category": "server_rack",
+      "description": "Industrial control room electronics server rack",
+      "url": "https://images.unsplash.com/photo-1738918937796-743064feefa1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTB8MHwxfHNlYXJjaHwxfHxpbmR1c3RyaWFsJTIwY2NvbnRyb2wlMjByb29tJTIwZWxlY3Ryb25pY3MlMjBzZXJ2ZXIlMjByYWNrfGVufDB8fHx8MTc5MjQ5OTA5MHww&ixlib=rb-4.1.0&q=85"
+    }
+  ],
+  "key_features": [
+    "Device connection status (online/offline with MQTT broker indicator)",
+    "Live Fatek PLC I/O state view (Inputs X, Outputs Y, Relays M, Data Registers R)",
+    "Output toggle control with direct MQTT command publishing",
+    "Register write control (16-bit integer/hex/float)",
+    "Live MQTT message and event inspection log with severity filters",
+    "Broker connection settings (Host, Port, Topic, Client ID)",
+    "Simulated Fatek PLC demo mode for testing without physical hardware"
+  ],
+  "bilingual_support": [
+    "Polski",
+    "English"
+  ],
+  "accessibility": {
+    "apca_compliant": true,
+    "reduced_motion_support": true,
+    "data_testids_required": true
+  }
+}
