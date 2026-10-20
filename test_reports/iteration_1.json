@@ -1,0 +1,46 @@
+{
+  "summary": "Full backend (10 pytest, external URL, real HiveMQ round-trip) + frontend (Playwright desktop + mobile) testing of Fatek PLC MQTT dashboard. All requested features work: health/config/state, Y/M set_output, set_register, plc_run stop/start, events, simulator toggle; UI live updates via WS, Y/M toggles, register write, power button, PL/EN switch, log filters, sim toggle -> device offline/online. Found and hot-fixed a CRITICAL bug: a malformed command (e.g. set_register value 'abc') raised ValueError inside the simulator's paho on_message callback, which killed the simulator MQTT network thread -> all later commands silently ignored while /health still reported device_online=true. Remaining issues: missing command value validation, mobile layout broken, minor race.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/device/{id}/command (simulator _on_message)", "issue": "FIXED by testing agent: invalid payload (value:'abc') raised uncaught ValueError in paho callback, killing simulator MQTT loop thread; PLC stopped reacting to all commands until backend restart while health showed online. Wrapped apply_command in try/except. Since the broker is public, anyone could trigger this by publishing to the command topic.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/device/{id}/command", "issue": "CommandIn has no validation: target is not restricted to Y/M, index is not range-checked, value type isn't checked (value 'abc', target 'Q' index 99 are accepted with 200 'queued' and logged as 'Komenda: Q99 = ON' / 'R1 = abc'). Negative register values silently wrap (-5 -> 65531). Return 422 for these instead."},
+      {"endpoint": "FatekSimulator", "issue": "No lock between the loop thread and the MQTT callback thread: after plc_run=false, R2 can still go up by 1 for one tick (flaky, about 50%). Benign, but add a threading.Lock."},
+      {"endpoint": "db.plc_states", "issue": "A state document is inserted every second with no TTL index or cap, so the collection grows without bound (~86k docs/day). Add a TTL index or keep only the latest state."},
+      {"endpoint": "GET /api/events", "issue": "limit has no upper or lower bound (use Query(100, ge=1, le=500))."},
+      {"endpoint": "Gateway._on_message", "issue": "Leftover dead code on line ~202 (asyncio.get_event_loop()... if False) and `import time` inside methods; clean up."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Commands", "issue": "sendCommand and toggleSim swallow errors silently; there is no loading or error feedback (e.g. a toast) when a command fails.", "affected_selectors": ["output-y-N", "reg-write-N", "plc-power-btn", "sim-toggle"]}
+    ],
+    "design_issues": [
+      {"screen": "Mobile 390px", "issues": ["Main grid uses fixed gridTemplateColumns 'minmax(0,2fr) minmax(0,1fr)' with no breakpoint, so the Broker Settings panel overlaps the PLC/inputs panels and the page scrolls horizontally (scrollWidth 450 > 390). Stack to 1 column below ~1024px.", "The 8-column X/Y/M grids get clipped on mobile; use 4 columns on small screens."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_fatek_mqtt.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Review/keep the try/except fix in FatekSimulator._on_message (server.py)",
+    "Add Pydantic validation to CommandIn (target in {Y,M} for set_output, index range per type, value bool/int 0..65535)",
+    "Make the dashboard grid responsive (single column on tablet/mobile)",
+    "Add TTL index/cap for plc_states",
+    "Add a threading.Lock in the simulator; show error toasts on failed commands"
+  ],
+  "critical_code_review_comments": [
+    "The public HiveMQ broker has no auth, so anyone who knows the prefix can send commands or spoof state. Acceptable for a demo; document it or support credentials/TLS (8883) through env.",
+    "WebSocket onmessage forces online=true on every state message; fine now, but don't let it override health-based offline detection.",
+    "MQTT_HOST/PORT/PREFIX have hardcoded defaults in code (os.environ.get with defaults)."
+  ],
+  "updated_files": ["/app/backend/server.py", "/app/backend/tests/test_fatek_mqtt.py"],
+  "success_rate": {"backend": "100% (10/10) after fix; 1 critical bug found and fixed", "frontend": "100% functional on desktop; mobile layout broken"},
+  "test_credentials": "None needed (no auth)",
+  "seed_data_creation": "None. Commands were issued against plc-01 and the register/output values were reset afterwards (R5 left at 4321 by the UI test).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "flaky_tests": ["test_plc_run R2 freeze check: about 50% failure before adding a 1.2s settle wait (simulator thread race)"],
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=... pytest /app/backend/tests/test_fatek_mqtt.py. Note: editing files under /app/backend (including tests/) triggers a uvicorn reload, which restarts the simulator (R2 resets, Y/M/R5 reset). Allow 3-5s for the MQTT round-trip.",
+  "rca of the issue": "Repro: POST /api/device/plc-01/command {type:set_register,index:1,value:'abc'} -> backend.err.log shows ValueError in server.py apply_command called from _on_message. paho VERSION2 re-raises callback exceptions, which ends the loop_start thread. publish() still writes from the sim thread, so the state keeps flowing and health stays online, but subscriptions are never processed again. Mitigation: try/except in the callback (applied) plus validation at the API level (pending)."
+}

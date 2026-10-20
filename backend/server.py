@@ -1,13 +1,15 @@
 """
-Fatek PLC MQTT gateway + simulator.
+Fatek PLC MQTT gateway + cold-store (chłodnia) simulator with 3 chambers.
 
 Architecture:
-  Simulated Fatek FBs PLC  <--MQTT-->  HiveMQ broker  <--MQTT-->  FastAPI backend  <--WS/HTTP-->  React app
+  Simulated Fatek FBs PLC (cold store) <--MQTT--> HiveMQ broker <--MQTT--> FastAPI backend <--WS/HTTP--> React app
 
-The simulator acts as an external device: it owns its own MQTT client, subscribes to
-its command topic and publishes its state to the broker. The backend owns a separate
-MQTT client that subscribes to state topics and publishes user commands. This makes the
-full round-trip travel through the public broker, exactly like a real Fatek controller.
+The simulator models a cold store with 3 chambers (komory). Each chamber has a
+temperature, a setpoint, a thermostat (automatic cooling with hysteresis), manual
+defrost, a door sensor and an alarm. It owns its own MQTT client (acts as the device),
+publishes chamber state and consumes commands. The backend owns a separate MQTT client
+that subscribes to state and publishes user commands, so the whole round-trip travels
+through the public broker just like a real Fatek controller.
 """
 from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
@@ -15,6 +17,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import json
+import time
 import asyncio
 import logging
 import threading
@@ -23,7 +26,7 @@ import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Optional, List
+from typing import Any, Optional
 
 import paho.mqtt.client as mqtt
 from pydantic import BaseModel, Field
@@ -41,11 +44,7 @@ MQTT_HOST = os.environ.get('MQTT_HOST', 'broker.hivemq.com')
 MQTT_PORT = int(os.environ.get('MQTT_PORT', '1883'))
 MQTT_PREFIX = os.environ.get('MQTT_PREFIX', 'emgt-fatek-7f3a9c').strip('/')
 
-DEVICE_ID = "plc-01"
-NUM_X = 8   # discrete inputs (read-only sensors)
-NUM_Y = 8   # discrete outputs (coils)
-NUM_M = 8   # internal relays
-NUM_R = 6   # 16-bit data registers
+DEVICE_ID = "chlodnia-01"
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -64,18 +63,25 @@ def command_topic(device_id: str) -> str:
 
 
 # ============================================================
-# Simulated Fatek FBs PLC  (external device, own MQTT client)
+# Simulated cold store (external device, own MQTT client)
 # ============================================================
-class FatekSimulator:
+class ColdStoreSimulator:
     def __init__(self):
         self.enabled = True
-        self.running = True            # PLC run/stop state
-        self.x = [False] * NUM_X       # inputs
-        self.y = [False] * NUM_Y       # outputs
-        self.m = [False] * NUM_M       # relays
-        self.r = [0] * NUM_R           # data registers
-        self.r[0] = 230                # e.g. voltage
-        self.r[1] = 50                 # e.g. frequency
+        self.chambers = [
+            {"id": 0, "name": "Komora 1", "temp": -16.0, "setpoint": -18.0,
+             "humidity": 85.0, "co2": 420.0,
+             "on": True, "cooling": False, "defrost": False, "door_open": False,
+             "compressor": False, "alarm": False, "_defrost_ticks": 0},
+            {"id": 1, "name": "Komora 2", "temp": 4.5, "setpoint": 2.0,
+             "humidity": 90.0, "co2": 650.0,
+             "on": True, "cooling": False, "defrost": False, "door_open": False,
+             "compressor": False, "alarm": False, "_defrost_ticks": 0},
+            {"id": 2, "name": "Komora 3", "temp": 6.0, "setpoint": 4.0,
+             "humidity": 88.0, "co2": 500.0,
+             "on": False, "cooling": False, "defrost": False, "door_open": False,
+             "compressor": False, "alarm": False, "_defrost_ticks": 0},
+        ]
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.mc = mqtt.Client(
@@ -99,44 +105,92 @@ class FatekSimulator:
 
     def apply_command(self, cmd: dict):
         t = cmd.get("type")
-        if t == "plc_run":
-            self.running = bool(cmd.get("value"))
-        elif t == "set_output":
-            i = int(cmd.get("index", -1))
-            if cmd.get("target") == "Y" and 0 <= i < NUM_Y:
-                self.y[i] = bool(cmd.get("value"))
-            elif cmd.get("target") == "M" and 0 <= i < NUM_M:
-                self.m[i] = bool(cmd.get("value"))
-        elif t == "set_register":
-            i = int(cmd.get("index", -1))
-            if 0 <= i < NUM_R:
-                self.r[i] = int(cmd.get("value", 0)) & 0xFFFF
+        ci = int(cmd.get("chamber", -1))
+        if not (0 <= ci < len(self.chambers)):
+            return
+        ch = self.chambers[ci]
+        if t == "set_setpoint":
+            try:
+                ch["setpoint"] = max(-40.0, min(20.0, float(cmd.get("value"))))
+            except (TypeError, ValueError):
+                pass
+        elif t == "chamber_power":
+            ch["on"] = bool(cmd.get("value"))
+            if not ch["on"]:
+                ch["cooling"] = ch["compressor"] = ch["defrost"] = False
+        elif t == "defrost":
+            if ch["on"]:
+                ch["defrost"] = bool(cmd.get("value"))
+                ch["_defrost_ticks"] = 30 if ch["defrost"] else 0
+                if ch["defrost"]:
+                    ch["cooling"] = ch["compressor"] = False
+
+    def _step(self):
+        for ch in self.chambers:
+            if not ch["on"]:
+                # drift toward ambient when off
+                ch["temp"] += 0.15
+                ch["cooling"] = ch["compressor"] = False
+                ch["alarm"] = False
+                self._sensors(ch)
+                continue
+            # random door events
+            if random.random() < 0.03:
+                ch["door_open"] = not ch["door_open"]
+            if ch["defrost"]:
+                ch["_defrost_ticks"] -= 1
+                ch["temp"] += 0.4
+                if ch["_defrost_ticks"] <= 0:
+                    ch["defrost"] = False
+            else:
+                sp = ch["setpoint"]
+                # thermostat hysteresis
+                if ch["temp"] > sp + 0.5:
+                    ch["cooling"] = True
+                elif ch["temp"] <= sp - 0.5:
+                    ch["cooling"] = False
+                if ch["cooling"]:
+                    ch["temp"] -= 0.35
+                    ch["compressor"] = True
+                else:
+                    ch["temp"] += 0.08
+                    ch["compressor"] = False
+                if ch["door_open"]:
+                    ch["temp"] += 0.2
+            ch["alarm"] = ch["temp"] > ch["setpoint"] + 5.0
+            ch["temp"] = round(ch["temp"], 1)
+            self._sensors(ch)
+
+    def _sensors(self, ch):
+        # humidity drifts; rises with defrost/door, falls with active cooling
+        drift = 0.0
+        if ch["defrost"] or ch["door_open"]:
+            drift += 0.6
+        if ch["compressor"]:
+            drift -= 0.4
+        drift += random.uniform(-0.3, 0.3)
+        ch["humidity"] = round(max(40.0, min(99.0, ch["humidity"] + drift)), 1)
+        # CO2 rises when door open, slowly decays otherwise
+        if ch["door_open"]:
+            ch["co2"] += random.uniform(5, 20)
+        else:
+            ch["co2"] += random.uniform(-8, 4)
+        ch["co2"] = round(max(400.0, min(5000.0, ch["co2"])), 0)
 
     def _loop(self):
-        tick = 0
         while not self._stop.is_set():
-            if self.running:
-                # simulate fluctuating sensor inputs
-                for i in range(NUM_X):
-                    if random.random() < 0.15:
-                        self.x[i] = not self.x[i]
-                # R2 = rising counter, R3 = pseudo temperature
-                self.r[2] = (self.r[2] + 1) & 0xFFFF
-                self.r[3] = 200 + int(50 * random.random())  # 20.0-25.0 C x10
-                self.r[4] = sum(self.y) * 100
+            self._step()
             self.publish()
-            tick += 1
             self._stop.wait(1.0)
 
     def snapshot(self) -> dict:
         return {
             "device_id": DEVICE_ID,
             "model": "Fatek FBs-24MC",
-            "running": self.running,
-            "x": list(self.x),
-            "y": list(self.y),
-            "m": list(self.m),
-            "r": list(self.r),
+            "chambers": [
+                {k: v for k, v in ch.items() if not k.startswith("_")}
+                for ch in self.chambers
+            ],
             "ts": now_iso(),
         }
 
@@ -198,12 +252,21 @@ class Gateway:
             payload = json.loads(msg.payload.decode())
         except Exception:
             return
+        prev = self.latest_state
         self.latest_state = payload
-        self.last_seen = asyncio.get_event_loop().time() if False else None
-        import time
         self.last_seen = time.time()
+        self._detect_alarms(prev, payload)
         self._schedule_persist(msg.topic, payload)
         self._schedule_broadcast({"type": "state", "topic": msg.topic, "payload": payload})
+
+    def _detect_alarms(self, prev, cur):
+        if not cur.get("chambers"):
+            return
+        prev_map = {c["id"]: c for c in (prev.get("chambers", []) if prev else [])}
+        for ch in cur["chambers"]:
+            was = prev_map.get(ch["id"], {}).get("alarm", False)
+            if ch.get("alarm") and not was:
+                self._schedule_event("warning", f"ALARM: {ch['name']} {ch['temp']}°C", {"chamber": ch["id"]})
 
     def _schedule_persist(self, topic, payload):
         if self.loop and not self.loop.is_closed():
@@ -237,7 +300,6 @@ class Gateway:
         return info.rc == mqtt.MQTT_ERR_SUCCESS
 
     def is_online(self) -> bool:
-        import time
         return self.last_seen is not None and (time.time() - self.last_seen) < 5
 
     def start(self, loop):
@@ -254,7 +316,7 @@ class Gateway:
 
 
 gateway = Gateway()
-simulator = FatekSimulator()
+simulator = ColdStoreSimulator()
 
 
 async def broadcast(gw: Gateway, data: dict):
@@ -283,18 +345,15 @@ app = FastAPI(lifespan=lifespan)
 api = APIRouter(prefix="/api")
 
 
-# ----- Models -----
 class CommandIn(BaseModel):
-    type: str = Field(pattern=r"^(plc_run|set_output|set_register)$")
-    target: Optional[str] = None
-    index: Optional[int] = None
+    type: str = Field(pattern=r"^(set_setpoint|chamber_power|defrost)$")
+    chamber: int
     value: Any = None
 
 
-# ----- Routes -----
 @api.get("/")
 async def root():
-    return {"message": "Fatek MQTT gateway"}
+    return {"message": "Fatek MQTT cold-store gateway"}
 
 
 @api.get("/config")
@@ -306,7 +365,7 @@ async def get_config():
         "device_id": DEVICE_ID,
         "state_topic": state_topic(DEVICE_ID),
         "command_topic": command_topic(DEVICE_ID),
-        "layout": {"x": NUM_X, "y": NUM_Y, "m": NUM_M, "r": NUM_R},
+        "chambers": len(simulator.chambers),
     }
 
 
@@ -339,13 +398,13 @@ async def device_command(device_id: str, cmd: CommandIn):
     body["request_id"] = uuid.uuid4().hex
     if not gateway.publish_command(device_id, body):
         raise HTTPException(503, "MQTT publish failed")
-    # human readable log
-    if cmd.type == "plc_run":
-        msg = f"Komenda: PLC {'START' if cmd.value else 'STOP'}"
-    elif cmd.type == "set_output":
-        msg = f"Komenda: {cmd.target}{cmd.index} = {'ON' if cmd.value else 'OFF'}"
+    name = f"Komora {cmd.chamber + 1}"
+    if cmd.type == "set_setpoint":
+        msg = f"{name}: nastawa = {cmd.value}°C"
+    elif cmd.type == "chamber_power":
+        msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
     else:
-        msg = f"Komenda: R{cmd.index} = {cmd.value}"
+        msg = f"{name}: rozmrażanie {'ON' if cmd.value else 'OFF'}"
     gateway.log_event_sync("command", msg, body)
     return {"queued": True, "request_id": body["request_id"]}
 
@@ -367,7 +426,6 @@ async def simulator_toggle(enable: bool = True):
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     gateway.ws_clients.add(ws)
-    # push current snapshot immediately
     if gateway.latest_state:
         await ws.send_json({"type": "state", "topic": state_topic(DEVICE_ID),
                             "payload": gateway.latest_state})

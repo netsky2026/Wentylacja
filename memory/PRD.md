@@ -1,29 +1,35 @@
-# Fatek PLC — MQTT Panel
+# Chłodnia MQTT — zarządzanie 3 komorami (Fatek PLC)
 
 ## Problem statement
-"aplikacja mqt do sterownik aplc fatek" — web app to control a Fatek PLC over MQTT.
-Controller speaks MQTT, connects through a broker on a server, backend server talks to the app.
+"aplikacja mqt do sterownik aplc fatek" → aplikacja mobilna do zarządzania 3 komorami chłodni.
+Ekran główny: 3 komory z odczytami czujników temperatura / wilgotność / CO₂.
+Dane szczegółowe i ustawienia w osobnej zakładce. Prosty, mobilny interfejs.
 
 ## User choices
-- Broker: HiveMQ public test broker (broker.hivemq.com:1883)
-- Hardware: none — use a simulated Fatek FBs PLC
-- Language: bilingual Polish + English (switcher)
+- Broker: HiveMQ public (broker.hivemq.com:1883)
+- Hardware: brak — symulowany sterownik Fatek (chłodnia)
+- Język: PL + EN
+- UI: mobilny, mało danych na głównym ekranie
 
 ## Architecture
-Simulated Fatek FBs PLC (own MQTT client) ⇄ HiveMQ broker ⇄ FastAPI gateway (own MQTT client) ⇄ React app (WS + HTTP).
-- Topic prefix: `emgt-fatek-7f3a9c` (MQTT_PREFIX in backend/.env)
-- State topic: `{prefix}/plc-01/state`, Command topic: `{prefix}/plc-01/command`
-- MongoDB: `plc_states` (state history), `plc_events` (event log)
-- WebSocket: `/api/ws` pushes live state + events
+Symulator chłodni (własny klient MQTT) ⇄ HiveMQ ⇄ FastAPI gateway ⇄ React (WS+HTTP).
+- device_id: `chlodnia-01`, prefix `emgt-fatek-7f3a9c`
+- Temat stanu `{prefix}/chlodnia-01/state`, komend `{prefix}/chlodnia-01/command`
+- Mongo: `plc_states`, `plc_events`; WebSocket `/api/ws`
+
+## Model komory
+temp, setpoint, humidity, co2, on, cooling, compressor, defrost, door_open, alarm.
+Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp > nastawa+5°C.
+
+## Komendy
+- set_setpoint(chamber, °C), chamber_power(chamber, bool), defrost(chamber, bool)
 
 ## Implemented (2026-10-20)
-- Backend gateway + full MQTT round-trip through HiveMQ (verified)
-- Simulated Fatek PLC: inputs X (fluctuating sensors), outputs Y, relays M, data registers R, run/stop
-- REST: /api/health, /api/config, /api/device/{id}/state, /api/device/{id}/command, /api/events, /api/simulator/toggle
-- React dashboard: status chips, PLC run/stop, X/Y/M grids, R register read/write, live event log with filters, broker settings, PL/EN switch, simulator toggle
-- Dark industrial theme (Barlow Condensed + JetBrains Mono)
+- Backend: symulator 3 komór z czujnikami temp/wilgotność/CO₂, pełny round-trip MQTT (zweryfikowany)
+- Frontend mobilny: zakładka Komory (3 karty: 3 czujniki + status + nastawa +/- + wł/wył + rozmroź), zakładka Dane (tabela surowa, symulator, ustawienia brokera, dziennik zdarzeń), przełącznik PL/EN, pasek połączenia
+- Alarm wizualny na karcie komory + wpis w dzienniku
 
-## Backlog / Next
-- P1: Multiple devices, history charts (recharts) for registers
-- P1: Editable broker settings from UI (reconnect)
-- P2: Auth, TLS broker for production, alarm thresholds on registers
+## Backlog
+- P1: wykresy historii (temp/wilgotność/CO₂) w zakładce Dane
+- P1: edytowalne nastawy progów alarmu / wilgotności
+- P2: autoryzacja, broker TLS produkcyjny, powiadomienia push o alarmach
