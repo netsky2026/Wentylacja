@@ -50,7 +50,7 @@ export const CsvExport = ({ t, ch }) => {
         {opts.map(([h, label]) => (
           <button key={h} data-testid={`csv-range-${h}`} onClick={() => setHours(h)} className="font-head"
             style={{
-              flex: 1, background: hours === h ? "#2a2f35" : "transparent", color: hours === h ? "var(--text)" : "var(--muted)",
+              flex: 1, background: hours === h ? "rgba(52,165,106,0.16)" : "transparent", color: hours === h ? "var(--primary)" : "var(--muted)",
               border: "1px solid var(--border)", borderRadius: 8, padding: "7px", fontSize: 13, fontWeight: 700, cursor: "pointer",
             }}>{label}</button>
         ))}

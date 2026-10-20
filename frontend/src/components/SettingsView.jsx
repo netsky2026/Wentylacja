@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { BrokerForm } from "@/components/BrokerForm";
 import { InstallCard } from "@/components/InstallCard";
 import { AccountCard, UsersCard } from "@/components/AccountCards";
+import { AlarmRecipientsCard } from "@/components/AlarmRecipientsCard";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
@@ -86,6 +87,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
         }}>{simOn ? t.on : t.off}</button>
     </div>
 
+    <AlarmRecipientsCard t={t} />
     <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
     <UsersCard t={t} me={user} />
     </>}

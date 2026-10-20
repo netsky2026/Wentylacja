@@ -26,6 +26,7 @@ import threading
 import random
 import uuid
 import copy
+import re
 import math
 import socket
 import ipaddress
@@ -517,6 +518,58 @@ def is_public_host(host: str, port: int) -> bool:
     return bool(infos)
 
 
+ALARM_REMIND_S = 30 * 60
+alarm_active: dict = {}  # chamber id -> last notification epoch
+
+
+def alarm_reason(ch: dict) -> str:
+    r = []
+    if ch.get("temp_alarm"):
+        r.append(f"temperatura {ch['temp']}°C > {ch.get('temp_max')}°C")
+    if ch.get("co2_alarm"):
+        r.append(f"CO₂ {int(ch['co2'])} ppm > {int(ch.get('co2_max'))} ppm")
+    return ", ".join(r)
+
+
+async def send_alarm(subject: str, body: str, kind: str):
+    """Delivery channel not configured yet: notifications are MOCKED (stored + logged only)."""
+    cfg = await db.alarm_settings.find_one({"_id": "main"}) or {}
+    recipients = cfg.get("recipients", []) if cfg.get("enabled", True) else []
+    if not recipients:
+        return
+    ts = now_iso()
+    await db.alarm_notifications.insert_many([
+        {"ts": ts, "kind": kind, "channel": r["type"], "to": r["value"], "subject": subject, "body": body,
+         "status": "mocked"} for r in recipients])
+    logger.info("ALARM NOTIFY (mocked) %s -> %s", subject, [r["value"] for r in recipients])
+    await gateway._event("info", f"Powiadomienie ({len(recipients)} odb., tryb testowy): {subject}", {"kind": kind})
+
+
+async def alarm_notifier():
+    while True:
+        await asyncio.sleep(5)
+        st = gateway.latest_state
+        if not st or not gateway.is_online():
+            continue
+        now = time.time()
+        try:
+            for ch in st.get("chambers", []):
+                cid, name = ch["id"], f"Komora {ch['id'] + 1}"
+                if ch.get("alarm"):
+                    last = alarm_active.get(cid)
+                    if last is None:
+                        alarm_active[cid] = now
+                        await send_alarm(f"ALARM: {name}", alarm_reason(ch), "alarm")
+                    elif now - last >= ALARM_REMIND_S:
+                        alarm_active[cid] = now
+                        await send_alarm(f"PRZYPOMNIENIE – ALARM trwa: {name}", alarm_reason(ch), "reminder")
+                elif cid in alarm_active:
+                    alarm_active.pop(cid)
+                    await send_alarm(f"Koniec alarmu: {name}", f"Temp {ch['temp']}°C, CO₂ {int(ch['co2'])} ppm", "cleared")
+        except Exception as e:
+            logger.warning("alarm notifier failed: %s", e)
+
+
 async def history_sampler():
     """Persist a downsampled history point per chamber every 15s for charts."""
     while True:
@@ -554,8 +607,10 @@ async def lifespan(app: FastAPI):
     gateway.start(loop)
     simulator.start()
     sampler = asyncio.create_task(history_sampler())
+    notifier = asyncio.create_task(alarm_notifier())
     yield
     sampler.cancel()
+    notifier.cancel()
     simulator.stop()
     gateway.stop()
     client.close()
@@ -628,8 +683,8 @@ async def device_state(device_id: str):
     return {"online": gateway.is_online(), "state": doc.get("payload")}
 
 
-@api.post("/device/{device_id}/command", dependencies=[Depends(require("operator"))])
-async def device_command(device_id: str, cmd: CommandIn):
+@api.post("/device/{device_id}/command")
+async def device_command(device_id: str, cmd: CommandIn, user: dict = Depends(require("operator"))):
     if "/" in device_id or len(device_id) > 64:
         raise HTTPException(400, "invalid device_id")
     if cmd.type == "set_setpoint" and (isinstance(cmd.value, bool) or not isinstance(cmd.value, (int, float))):
@@ -657,7 +712,7 @@ async def device_command(device_id: str, cmd: CommandIn):
             f"{lbl[k]} {round(100 - x) if k != 'chimney' else round(x)}%" for k, x in cmd.value.items())
     else:
         msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
-    gateway.log_event_sync("command", msg, body)
+    gateway.log_event_sync("command", msg, {**body, "user": user["email"]})
     return {"queued": True, "request_id": body["request_id"]}
 
 
@@ -668,10 +723,10 @@ async def events(limit: int = 100):
     return {"events": docs}
 
 
-@api.post("/simulator/toggle", dependencies=[Depends(require("admin"))])
-async def simulator_toggle(enable: bool = True):
+@api.post("/simulator/toggle")
+async def simulator_toggle(enable: bool = True, user: dict = Depends(require("admin"))):
     simulator.enabled = enable
-    gateway.log_event_sync("info", f"Symulator {'włączony' if enable else 'wyłączony'}", {})
+    gateway.log_event_sync("info", f"Symulator {'włączony' if enable else 'wyłączony'}", {"user": user["email"]})
     return {"simulator_enabled": simulator.enabled}
 
 
@@ -680,8 +735,8 @@ async def get_thresholds():
     return {"thresholds": [{"chamber": k, **v} for k, v in sorted(THRESHOLDS.items())]}
 
 
-@api.put("/thresholds/{chamber}", dependencies=[Depends(require("operator"))])
-async def set_threshold(chamber: int, body: ThresholdIn):
+@api.put("/thresholds/{chamber}")
+async def set_threshold(chamber: int, body: ThresholdIn, user: dict = Depends(require("operator"))):
     if chamber not in DEFAULT_THRESHOLDS:
         raise HTTPException(404, "unknown chamber")
     THRESHOLDS[chamber] = {"temp_max": body.temp_max, "co2_max": body.co2_max}
@@ -691,7 +746,8 @@ async def set_threshold(chamber: int, body: ThresholdIn):
         upsert=True,
     )
     gateway.log_event_sync(
-        "info", f"Komora {chamber + 1}: progi temp ≤ {body.temp_max}°C, CO₂ ≤ {int(body.co2_max)} ppm", {})
+        "info", f"Komora {chamber + 1}: progi temp ≤ {body.temp_max}°C, CO₂ ≤ {int(body.co2_max)} ppm",
+        {"user": user["email"]})
     # re-evaluate current state against new thresholds immediately
     if gateway.latest_state:
         prev = copy.deepcopy(gateway.latest_state)
@@ -714,8 +770,8 @@ async def history(hours: int = 3):
     return {"history": out, "plant": plant}
 
 
-@api.put("/broker", dependencies=[Depends(require("admin"))])
-async def set_broker(body: BrokerIn):
+@api.put("/broker")
+async def set_broker(body: BrokerIn, user: dict = Depends(require("admin"))):
     cfg = body.model_dump()
     if not await asyncio.to_thread(is_public_host, cfg["host"], cfg["port"]):
         raise HTTPException(422, "Broker host must resolve to a public address")
@@ -731,8 +787,49 @@ async def set_broker(body: BrokerIn):
     gateway.last_seen = None
     gateway.mqtt_start()
     simulator.mqtt_start()
-    gateway.log_event_sync("info", f"Zmieniono broker: {MQTT_HOST}:{MQTT_PORT}", {})
+    gateway.log_event_sync("info", f"Zmieniono broker: {MQTT_HOST}:{MQTT_PORT}", {"user": user["email"]})
     return await get_config()
+
+
+class Recipient(BaseModel):
+    type: str = Field(pattern=r"^(email|sms)$")
+    value: str = Field(min_length=3, max_length=254)
+
+
+class AlarmSettingsIn(BaseModel):
+    enabled: bool = True
+    recipients: List[Recipient] = Field(default_factory=list, max_length=20)
+
+
+EMAIL_RX = r"^[^@\s;,]+@[^@\s;,]+\.[^@\s;,]+$"
+PHONE_RX = r"^\+?[0-9 ]{7,20}$"
+
+
+@api.get("/alarm-settings", dependencies=[Depends(require("admin"))])
+async def get_alarm_settings():
+    cfg = await db.alarm_settings.find_one({"_id": "main"}, {"_id": 0}) or {}
+    sent = await db.alarm_notifications.find({}, {"_id": 0}).sort("ts", -1).to_list(10)
+    return {"enabled": cfg.get("enabled", True), "recipients": cfg.get("recipients", []),
+            "channel_configured": False, "reminder_min": ALARM_REMIND_S // 60, "recent": sent}
+
+
+@api.put("/alarm-settings")
+async def put_alarm_settings(body: AlarmSettingsIn, user: dict = Depends(require("admin"))):
+    recs = []
+    for r in body.recipients:
+        v = r.value.strip()
+        if not re.match(EMAIL_RX if r.type == "email" else PHONE_RX, v):
+            raise HTTPException(422, f"invalid {r.type}: {v}")
+        recs.append({"type": r.type, "value": v.replace(" ", "") if r.type == "sms" else v.lower()})
+    await db.alarm_settings.update_one({"_id": "main"}, {"$set": {"enabled": body.enabled, "recipients": recs}}, upsert=True)
+    gateway.log_event_sync("info", f"Odbiorcy alarmów: {len(recs)}", {"user": user["email"]})
+    return await get_alarm_settings()
+
+
+@api.post("/alarm-settings/test")
+async def test_alarm(user: dict = Depends(require("admin"))):
+    await send_alarm("TEST: Marco Polo Wentylacja", f"Powiadomienie testowe wysłane przez {user['email']}", "test")
+    return await get_alarm_settings()
 
 
 @api.get("/usage/daily", dependencies=[Depends(require("viewer"))])

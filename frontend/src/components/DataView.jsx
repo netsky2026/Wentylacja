@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Zap, Droplet } from "lucide-react";
 import { DailyUsage, CsvExport } from "@/components/UsageExport";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
@@ -50,6 +51,41 @@ const PlantTile = ({ plant, t }) => {
   );
 };
 
+const FILTERS = [["all", "allLevels"], ["actions", "levelCommand"], ["alarms", "levelWarning"]];
+const matches = (e, f) => f === "all" || (f === "actions" ? !!e.meta?.user : e.level === "warning");
+
+const EventLog = ({ t, events }) => {
+  const [f, setF] = useState("all");
+  const list = events.filter((e) => matches(e, f));
+  return (
+    <div className="panel panel-pad" data-testid="event-log-card">
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <span className="font-head" style={{ fontSize: 15, fontWeight: 600 }}>{t.eventLog}</span>
+        <div className="flex gap-1">
+          {FILTERS.map(([k, label]) => (
+            <button key={k} data-testid={`log-filter-${k}`} onClick={() => setF(k)} className="font-head"
+              style={{ background: f === k ? "rgba(52,165,106,0.16)" : "transparent", color: f === k ? "var(--primary)" : "var(--muted)",
+                border: `1px solid ${f === k ? "var(--primary)" : "var(--border)"}`, borderRadius: 999, padding: "3px 9px",
+                fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{t[label]}</button>
+          ))}
+        </div>
+      </div>
+      <div data-testid="event-log" style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
+        {list.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12 }}>{t.noEvents}</div>}
+        {list.map((e, i) => (
+          <div key={i} className={`log-line ${e.level}`} style={{ padding: "5px 10px" }} data-testid="event-line">
+            <div style={{ fontSize: 12 }}>{e.message}</div>
+            <div style={{ color: "var(--muted)", fontSize: 10 }}>
+              {new Date(e.ts).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              {e.meta?.user && <span data-testid="event-user"> · {e.meta.user}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const DataView = ({ t, ch, plant, history, plantHistory, events }) => {
   const data = (history[String(ch?.id)] || []).map((d) => ({
     ...d, cl_closed: d.curtain_left == null ? null : 100 - d.curtain_left,
@@ -70,18 +106,7 @@ export const DataView = ({ t, ch, plant, history, plantHistory, events }) => {
 
       {ch && <CsvExport t={t} ch={ch} />}
 
-      <div className="panel panel-pad">
-        <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{t.eventLog}</div>
-        <div data-testid="event-log" style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
-          {events.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12 }}>{t.noEvents}</div>}
-          {events.map((e, i) => (
-            <div key={i} className={`log-line ${e.level}`} style={{ padding: "5px 10px" }}>
-              <div style={{ fontSize: 12 }}>{e.message}</div>
-              <div style={{ color: "var(--muted)", fontSize: 10 }}>{new Date(e.ts).toLocaleTimeString()}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <EventLog t={t} events={events} />
     </div>
   );
 };
