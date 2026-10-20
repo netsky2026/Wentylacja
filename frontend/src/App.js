@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
-import { PiggyBank } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { I18N } from "@/i18n";
 import { ChamberScreen } from "@/components/ChamberScreen";
@@ -111,7 +110,7 @@ export default function App() {
       <div className="mobile-wrap">
         <header className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <PiggyBank size={22} color="#9aa7b4" />
+            <img src="/icon-192.png" alt="" data-testid="app-logo" style={{ width: 28, height: 28, borderRadius: 7 }} />
             <span className="font-head" data-testid="app-title" style={{ fontSize: 20, fontWeight: 700 }}>{t.appName}</span>
           </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>
