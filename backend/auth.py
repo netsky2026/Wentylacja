@@ -187,6 +187,7 @@ async def delete_user(user_id: str, admin: dict = Depends(require("admin"))):
 async def setup():
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
+    await db.login_attempts.create_index("last", expireAfterSeconds=LOCK_MIN * 60)
     email = os.environ["ADMIN_EMAIL"].strip().lower()
     pw = os.environ["ADMIN_PASSWORD"]
     u = await db.users.find_one({"email": email})

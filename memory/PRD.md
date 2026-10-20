@@ -59,3 +59,10 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Installable PWA "Marco Polo Wentylacja": manifest (standalone, id /), icons (green pig on dark bg) 192/512/maskable/apple-touch, sw.js (navigation network-first, cache mpw-v4; API/WS untouched), apple meta tags, safe-area padding, InstallCard in Ustawienia, logo in header.
 - Tested iteration_5 (frontend 100%).
 - Production TODO: real Fatek via Modbus→MQTT gateway, private broker with TLS, app login, SMS/e-mail alarms, deploy (stable URL), native store app via Deploy → "Add Mobile App".
+
+## 2026-06 Update 5 (Security hardening after audit)
+- JWT cookie auth (auth.py): bcrypt, access 15 min + refresh 30 d, token version revoked on password change, per-account lockout (5/15 min, TTL index), roles viewer/operator/admin, admin user management, password change. Admin seeded from .env.
+- All /api data/control endpoints + WS require login; origin guard (Origin == FRONTEND_URL or Origin host == Host); CORS = FRONTEND_URL.
+- Broker: SSRF block (host must resolve to public IP), password Fernet-encrypted (BROKER_SECRET).
+- MQTT: only exact state topic, strict sanitize (exactly chambers 0..2, finite numbers); CSV cell escaping; events/history limits clamped.
+- Tested iteration_6/7. Known accepted limits: lockout can be triggered on a known email (15-min DoS), DNS-rebinding TOCTOU on admin-only broker change, public HiveMQ broker unauthenticated until user sets a private broker.
