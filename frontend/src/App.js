@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import { PiggyBank } from "lucide-react";
+import { Toaster, toast } from "sonner";
 import { I18N } from "@/i18n";
 import { ChamberScreen } from "@/components/ChamberScreen";
 import { DataView } from "@/components/DataView";
@@ -94,7 +95,8 @@ export default function App() {
   }, []);
 
   const send = async (body) => {
-    try { await axios.post(`${API}/device/${config?.device_id || "chlodnia-01"}/command`, body); } catch (e) { /* noop */ }
+    try { await axios.post(`${API}/device/${config?.device_id || "chlodnia-01"}/command`, body); }
+    catch (e) { toast.error(t.cmdFailed); }
   };
   const toggleSim = async () => {
     const { data } = await axios.post(`${API}/simulator/toggle?enable=${!simOn}`);
@@ -135,7 +137,7 @@ export default function App() {
         </div>
 
         {view !== "settings" && chambers.length > 0 && (
-          <ChamberSwitch chambers={chambers} selected={selected} setSelected={setSelected} />
+          <ChamberSwitch chambers={chambers} selected={selected} setSelected={setSelected} t={t} />
         )}
 
         {chambers.length === 0 ? (
@@ -150,6 +152,7 @@ export default function App() {
         )}
       </div>
       <BottomNav view={view} setView={setView} t={t} />
+      <Toaster theme="dark" position="top-center" />
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
@@ -7,14 +8,23 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
   const [saved, setSaved] = useState(false);
   useEffect(() => { if (th) { setTmax(String(th.temp_max)); setCmax(String(th.co2_max)); } }, [th]);
   const save = async () => {
-    await saveThreshold(ch.id, parseFloat(tmax), parseFloat(cmax));
+    const a = parseFloat(tmax), b = parseFloat(cmax);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) { toast.error(t.invalidValue); return; }
+    try { await saveThreshold(ch.id, a, b); } catch (e) { toast.error(t.saveFailed); return; }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
-  const sp = (d) => send({ type: "set_setpoint", chamber: ch.id, value: Math.round((ch.setpoint + d) * 10) / 10 });
+  const pending = useRef(null);
+  useEffect(() => { pending.current = null; }, [ch.setpoint]);
+  const sp = (d) => {
+    const base = pending.current ?? ch.setpoint;
+    const value = Math.max(5, Math.min(35, Math.round((base + d) * 10) / 10));
+    pending.current = value;
+    send({ type: "set_setpoint", chamber: ch.id, value });
+  };
   return (
     <div className="panel panel-pad" data-testid={`settings-chamber-${ch.id}`}>
-      <div className="font-head" style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{ch.name}</div>
+      <div className="font-head" style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{t.chamberWord} {ch.id + 1}</div>
       <div className="flex items-center justify-between reg-cell mb-3" style={{ padding: "8px 12px" }}>
         <span style={{ color: "var(--muted)", fontSize: 12 }}>{t.setpoint}</span>
         <div className="flex items-center gap-3">

@@ -15,7 +15,7 @@ export const BottomNav = ({ view, setView, t }) => {
   );
 };
 
-export const ChamberSwitch = ({ chambers, selected, setSelected }) => (
+export const ChamberSwitch = ({ chambers, selected, setSelected, t }) => (
   <div className="panel flex mb-3" style={{ overflow: "hidden" }} data-testid="chamber-switch">
     {chambers.map((ch) => (
       <button key={ch.id} data-testid={`chamber-tab-${ch.id}`} onClick={() => setSelected(ch.id)}
@@ -27,7 +27,7 @@ export const ChamberSwitch = ({ chambers, selected, setSelected }) => (
           transition: "background-color 0.2s ease, color 0.2s ease",
         }}>
         <span className={`led ${ch.alarm ? "warn pulse" : ch.on ? "ok" : ""}`} style={!ch.on && !ch.alarm ? { background: "#444" } : undefined} />
-        {ch.name}
+        {t.chamberWord} {ch.id + 1}
       </button>
     ))}
   </div>

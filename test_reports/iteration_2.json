@@ -1,0 +1,43 @@
+{
+  "summary": "Full backend + mobile UI (390x844) test of piggery MQTT app. Backend 14/15 pytest pass (MQTT round-trips for setpoint/power, thresholds persist, alarm flags, history with curtain/chimney fields, events, simulator toggle). Frontend: all requested flows pass - fixed bottom nav switching views, single-chamber screen per tab, curtain values = 100 - open matching API, chimney gauge, power toggle RUN/OFF round trip, Dane view (plant tile, 5 charts render with SVG, event log, follows selected chamber), Ustawienia (sp +/- round trip, threshold save persists, alarm badge appears/disappears), PL/EN toggle, no horizontal overflow. One backend bug: alarm triggered via threshold change produces no ALARM event/notification.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PUT /api/thresholds/{chamber}", "issue": "When a lowered threshold puts a chamber into alarm, NO 'ALARM: Komora X' event is logged and no WS 'alarm' message (browser notification) is sent. RCA: set_threshold calls gateway.annotate(gateway.latest_state) in-place, so latest_state already has alarm=True; on next MQTT message _detect_alarms(prev, cur) sees was=True and skips. Fix: in set_threshold do prev=copy.deepcopy(gateway.latest_state); gateway.annotate(gateway.latest_state); gateway._detect_alarms(prev, gateway.latest_state) (or don't mutate latest_state in place).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/device/{id}/command", "issue": "chamber not range-validated (out-of-range silently ignored by sim but returns queued:true and logs event 'Komora 10: ...'); set_setpoint value not type-validated"},
+      {"endpoint": "server.py:217", "issue": "Duplicate logger.warning line in PiggerySimulator.publish"},
+      {"endpoint": "history_sampler", "issue": "Keeps persisting stale latest_state every 15s while simulator disabled/device offline (flat fake history)"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SettingsView setpoint +/-", "issue": "Rapid double-click of + only adds 0.5 total (value computed from stale ch.setpoint before MQTT echo)", "selector": "[data-testid=chamber-1-sp-up]", "priority": "LOW"},
+      {"component": "SettingsView threshold save", "issue": "Empty/invalid input -> parseFloat NaN -> null -> 422, unhandled promise rejection, no error feedback to user", "selector": "[data-testid=threshold-0-save]", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Command send", "issue": "send() swallows errors silently - no user feedback if command POST fails", "affected_selectors": ["[data-testid=chamber-0-power]"]}
+    ],
+    "design_issues": [
+      {"screen": "Dane", "issues": ["Humidity chart Y-axis auto domain goes to 105 (>100%) - clamp to [0,100]"]},
+      {"screen": "EN language", "issues": ["Chamber names stay 'Komora 1/2/3' in EN (come from backend)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_piggery_mqtt.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix missing ALARM event/notification when alarm is caused by threshold change (deepcopy prev + _detect_alarms in set_threshold)",
+    "Validate chamber range (0-2) and numeric value in CommandIn",
+    "Add error handling/feedback for threshold save and command send",
+    "Optional: clamp humidity chart domain, remove duplicate log line, skip history sampling while device offline"
+  ],
+  "critical_code_review_comments": [
+    "Gateway.annotate mutates shared latest_state from the API thread context while MQTT thread also writes it - edge-detection breaks (see critical bug)",
+    "Old /app/backend/tests/test_fatek_mqtt.py targets obsolete 'plc-01' API and should be deleted"
+  ],
+  "updated_files": ["/app/backend/tests/test_piggery_mqtt.py"],
+  "success_rate": {"backend": "93% (14/15)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "None. Thresholds restored to 26/3000, 28/3000, 30/3000; setpoints 20/22/24; chamber 3 OFF; simulator ON.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest backend/tests/test_piggery_mqtt.py (test_threshold_alarm_event_logged covers the alarm-event bug). Python urllib gets 403 from public URL - use requests or page.request. Notifications show 'Zablokowane w przeglądarce' in headless."
+}

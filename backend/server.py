@@ -23,6 +23,7 @@ import logging
 import threading
 import random
 import uuid
+import copy
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -214,7 +215,6 @@ class PiggerySimulator:
             self.mc.publish(state_topic(DEVICE_ID), json.dumps(self.snapshot()), qos=1)
         except Exception as e:
             logger.warning("SIM publish failed: %s", e)
-            logger.warning("SIM publish failed: %s", e)
 
     def start(self):
         self.mc.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
@@ -379,7 +379,7 @@ async def history_sampler():
     while True:
         await asyncio.sleep(15)
         st = gateway.latest_state
-        if not st or not st.get("chambers"):
+        if not st or not st.get("chambers") or not gateway.is_online():
             continue
         ts = now_iso()
         docs = [{"chamber": ch["id"], "name": ch["name"], "temp": ch["temp"],
@@ -421,7 +421,7 @@ api = APIRouter(prefix="/api")
 
 class CommandIn(BaseModel):
     type: str = Field(pattern=r"^(set_setpoint|chamber_power)$")
-    chamber: int
+    chamber: int = Field(ge=0, le=2)
     value: Any = None
 
 
@@ -473,6 +473,8 @@ async def device_state(device_id: str):
 async def device_command(device_id: str, cmd: CommandIn):
     if "/" in device_id or len(device_id) > 64:
         raise HTTPException(400, "invalid device_id")
+    if cmd.type == "set_setpoint" and not isinstance(cmd.value, (int, float)):
+        raise HTTPException(422, "value must be a number")
     body = cmd.model_dump()
     body["request_id"] = uuid.uuid4().hex
     if not gateway.publish_command(device_id, body):
@@ -518,7 +520,9 @@ async def set_threshold(chamber: int, body: ThresholdIn):
         "info", f"Komora {chamber + 1}: progi temp ≤ {body.temp_max}°C, CO₂ ≤ {int(body.co2_max)} ppm", {})
     # re-evaluate current state against new thresholds immediately
     if gateway.latest_state:
+        prev = copy.deepcopy(gateway.latest_state)
         gateway.annotate(gateway.latest_state)
+        gateway._detect_alarms(prev, gateway.latest_state)
     return {"ok": True, "thresholds": THRESHOLDS[chamber]}
 
 

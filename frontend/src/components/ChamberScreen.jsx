@@ -16,7 +16,7 @@ export const ChamberScreen = ({ ch, t, send }) => (
     <div className="flex items-center justify-between mb-3">
       <span className="flex items-center gap-2">
         <span className={`led ${ch.on ? "ok" : "warn"}`} />
-        <span className="font-head" style={{ fontSize: 22, fontWeight: 700 }}>{ch.name}</span>
+        <span className="font-head" style={{ fontSize: 22, fontWeight: 700 }}>{t.chamberWord} {ch.id + 1}</span>
       </span>
       <span className="flex items-center gap-2">
         {ch.alarm && <span className="badge badge-alarm" data-testid={`chamber-${ch.id}-alarm`}><AlertTriangle size={12} /> {t.alarm}</span>}
