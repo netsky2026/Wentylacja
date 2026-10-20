@@ -47,3 +47,10 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Backend: history stores curtains/chimney + plant history; alarm event fires on threshold change; command validation (chamber 0-2, numeric setpoint).
 - Tested: iteration_2, iteration_3 (100%).
 - Backlog: manual curtain/chimney control, daily consumption chart, CSV export.
+
+## 2026-06 Update 3
+- Manual ventilation: per-chamber AUTO/RĘCZNY (set_mode), sliders (set_vent; curtains in UI as % closed, protocol % open); simulator keeps `manual` targets.
+- Daily usage 7 days (GET /api/usage/daily) bar charts; CSV export (GET /api/history/csv?chamber&hours, ';' + BOM, Europe/Warsaw time).
+- Broker settings form (PUT /api/broker: host, port, user, password, TLS, prefix, device_id), saved in Mongo broker_config, reconnects gateway+simulator.
+- Online window 10s. Tested iteration_4 (backend 42/42, frontend 100%).
+- Backlog: PWA (add to home screen), encrypt broker password, CSV export of plant usage.

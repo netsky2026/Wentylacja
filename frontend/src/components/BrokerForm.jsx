@@ -16,14 +16,19 @@ export const BrokerForm = ({ t, config, onSaved }) => {
       password: "", tls: !!config.tls, prefix: config.prefix, device_id: config.device_id });
   }, [config]);
   if (!f) return null;
-  const set = (k) => (e) => setF({ ...f, [k]: k === "tls" ? e.target.checked : e.target.value });
+  const set = (k) => (e) => {
+    if (k !== "tls") return setF({ ...f, [k]: e.target.value });
+    const tls = e.target.checked;
+    const port = tls && f.port === "1883" ? "8883" : !tls && f.port === "8883" ? "1883" : f.port;
+    setF({ ...f, tls, port });
+  };
   const inp = (k, type = "text", extra = {}) => (
     <input className="num-input" style={{ fontSize: 13 }} type={type} value={f[k]} onChange={set(k)} data-testid={`broker-${k}`} {...extra} />
   );
   const save = async () => {
     const port = parseInt(f.port, 10);
     if (!f.host.trim() || !f.prefix.trim() || !f.device_id.trim() || !(port >= 1 && port <= 65535)) {
-      toast.error(t.invalidValue); return;
+      toast.error(t.invalidBroker); return;
     }
     setBusy(true);
     try {
@@ -45,6 +50,8 @@ export const BrokerForm = ({ t, config, onSaved }) => {
         <Field label={t.port}>{inp("port", "number")}</Field>
         <Field label={t.username}>{inp("username", "text", { autoComplete: "off" })}</Field>
         <Field label={t.password}>{inp("password", "password", { autoComplete: "new-password", placeholder: config.has_password ? "••••••" : "" })}</Field>
+      </div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 8 }}>
         <Field label={t.prefix}>{inp("prefix")}</Field>
         <Field label={t.deviceId}>{inp("device_id")}</Field>
       </div>

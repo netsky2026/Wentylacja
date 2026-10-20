@@ -25,6 +25,7 @@ import threading
 import random
 import uuid
 import copy
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -123,8 +124,8 @@ class PiggerySimulator:
 
     def mqtt_stop(self):
         try:
-            self.mc.loop_stop()
             self.mc.disconnect()
+            self.mc.loop_stop()
         except Exception:
             pass
 
@@ -291,8 +292,8 @@ class Gateway:
 
     def mqtt_stop(self):
         try:
-            self.mc.loop_stop()
             self.mc.disconnect()
+            self.mc.loop_stop()
         except Exception:
             pass
         self.connected = False
@@ -384,7 +385,7 @@ class Gateway:
         return info.rc == mqtt.MQTT_ERR_SUCCESS
 
     def is_online(self) -> bool:
-        return self.last_seen is not None and (time.time() - self.last_seen) < 5
+        return self.last_seen is not None and (time.time() - self.last_seen) < 10
 
     def start(self, loop):
         self.loop = loop
@@ -677,7 +678,7 @@ async def history_csv(chamber: int, hours: int = 24):
         yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_zamkn_%;kurtyna_P_zamkn_%;komin_otw_%\n"
         async for d in cursor:
             cl, cr = d.get("curtain_left"), d.get("curtain_right")
-            ts = datetime.fromisoformat(d["ts"]).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            ts = datetime.fromisoformat(d["ts"]).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M:%S")
             yield ";".join([ts, fmt(d.get("temp")), fmt(d.get("humidity")), fmt(d.get("co2")),
                             fmt(None if cl is None else round(100 - cl, 1)),
                             fmt(None if cr is None else round(100 - cr, 1)), fmt(d.get("chimney"))]) + "\n"

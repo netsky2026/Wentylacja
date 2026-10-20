@@ -1,0 +1,36 @@
+{
+  "summary": "Tested the 4 new features plus regression. Backend: 42/42 pytest pass. test_piggery_mqtt.py was extended with 23 new tests: set_mode/set_vent validation (10 cases), manual vent moves gradually toward the target and auto overrides it, usage/daily, CSV export (BOM, ';' separators, comma decimals, % closed columns, 404), broker validation (6 cases) and reconnect. The first run had 3 failures. All 3 came from latency on the public HiveMQ broker (1-4s each way, delivery is bursty), not from code bugs, and pass once the timeouts are 20-40s. Frontend at 390x844, all working: AUTO/RĘCZNY toggle and badge; sliders appear only in manual mode; keyboard (Home) and mouse drag on the sliders send set_vent; gauge chamber-0-curtain-left-value moved 89->47% at about 3%/s toward slider 0%; mode buttons are disabled when the chamber is off; daily-usage shows 7 bars in each chart (only today is non-zero); csv-range buttons update the href (chamber & hours) and the real download gives komora3_24h_*.csv; broker form fields are prefilled; port 0 shows a client-side toast with no PUT sent; host 'bad host' shows a 'Nie udało się zapisać' toast; a valid save shows the success toast and the device is back online in about 6s; EN labels are correct; no page errors. No horizontal overflow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/broker", "issue": "The request takes about 6.7s. mqtt_stop() calls loop_stop() before disconnect(), so the DISCONNECT packet is never sent cleanly and the call blocks. Calling disconnect() first and then loop_stop() would make it faster and cleaner."},
+      {"endpoint": "GET /api/health (is_online)", "issue": "The 5s online window is tight for the public HiveMQ broker. Observed state-delivery gaps were up to about 4s, and a set_mode round trip took up to about 6s. Status may flicker to offline, and commands can look ignored for several seconds."},
+      {"endpoint": "GET /api/history/csv", "issue": "Timestamps use the server's local timezone (.astimezone(), which is UTC in the container), not the user's timezone. Consider Europe/Warsaw or putting UTC in the column header."},
+      {"endpoint": "PUT /api/broker", "issue": "The broker password is stored in plain text in Mongo (broker_config)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Ustawienia broker form", "issues": ["At 390px the device_id input (1fr column) cuts off 'chlodnia-01'", "An invalid host, prefix or port shows the generic 'Wpisz poprawne liczby' (enter valid numbers) toast, which is misleading for a text field such as an empty host", "The TLS checkbox is a native input, not a shadcn Switch or Checkbox. Ticking TLS (8883) does not suggest port 8883."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_piggery_mqtt.py", "/app/test_reports/pytest/pytest_results_iter4.xml"],
+  "action_items": [
+    "Optional: in Gateway/PiggerySimulator.mqtt_stop call disconnect() before loop_stop() to speed up PUT /api/broker",
+    "Optional: widen the is_online window (for example to 10s) because of public broker latency",
+    "Optional: field-specific validation toast in BrokerForm; widen the device_id input on mobile"
+  ],
+  "critical_code_review_comments": [
+    "set_vent in AUTO mode silently updates ch.manual targets. Switching to manual then overwrites them with the current positions, so the stored value is unused. This is harmless.",
+    "The gateway subscribes to the wildcard '{prefix}/+/state' while latest_state is a single object. If another device publishes under the same prefix, the dashboard would mix states. Consider subscribing only to state_topic(DEVICE_ID).",
+    "set_broker restarts the in-process simulator too. This is fine for the demo, but with a real PLC the simulator should be disabled."
+  ],
+  "updated_files": ["/app/backend/tests/test_piggery_mqtt.py"],
+  "success_rate": {"backend": "100% (42/42) after latency-tolerant timeouts", "frontend": "100%"},
+  "seed_data_creation": "None. Restored state: all chambers mode auto; thresholds 26/3000, 28/3000, 30/3000; setpoints 20/22/24; chamber 3 OFF; simulator ON; broker broker.hivemq.com:1883, prefix emgt-fatek-7f3a9c, device chlodnia-01, no auth/TLS (verified via /api/config and /api/health)",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with '-n 0' (pytest.ini enables xdist, and parallel runs break the stateful tests) and export REACT_APP_BACKEND_URL first. The public HiveMQ broker adds 1-4s latency, so wait_for defaults to 20s. Editing files under /app/backend triggers a uvicorn reload, so wait about 8s afterwards. Slider thumbs are '[data-testid=chamber-X-slider-*] [role=slider]' (keyboard Home/End work). Recharts bars are '.recharts-bar-rectangle'."
+}

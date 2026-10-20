@@ -38,7 +38,7 @@ def cmd(s, body):
     return r.json()
 
 
-def wait_for(s, pred, timeout=10):
+def wait_for(s, pred, timeout=20):  # public HiveMQ adds 1-4s latency each way
     end = time.time() + timeout
     st = None
     while time.time() < end:
@@ -173,11 +173,21 @@ def test_events(s):
 def test_simulator_toggle(s):
     r = s.post(f"{API}/simulator/toggle?enable=false")
     assert r.json()["simulator_enabled"] is False
-    time.sleep(6)
-    assert s.get(f"{API}/health").json()["device_online"] is False
+    off = False
+    for _ in range(20):
+        time.sleep(1)
+        if s.get(f"{API}/health").json()["device_online"] is False:
+            off = True
+            break
     s.post(f"{API}/simulator/toggle?enable=true")
-    time.sleep(3)
-    assert s.get(f"{API}/health").json()["device_online"] is True
+    assert off
+    on = False
+    for _ in range(20):
+        time.sleep(1)
+        if s.get(f"{API}/health").json()["device_online"] is True:
+            on = True
+            break
+    assert on
 
 
 # Command validation (iteration 3)
@@ -190,3 +200,134 @@ def test_simulator_toggle(s):
 def test_command_validation_422(s, body):
     r = s.post(f"{API}/device/{DEV}/command", json=body, timeout=10)
     assert r.status_code == 422, r.text
+
+
+# ---------------- iteration 4: manual ventilation, daily usage, CSV export, broker settings ----------------
+# Manual ventilation mode (set_mode / set_vent)
+@pytest.mark.parametrize("body", [
+    {"type": "set_mode", "chamber": 1, "value": "turbo"},
+    {"type": "set_mode", "chamber": 1, "value": None},
+    {"type": "set_vent", "chamber": 1, "value": {"curtain_left": 101}},
+    {"type": "set_vent", "chamber": 1, "value": {"curtain_left": -1}},
+    {"type": "set_vent", "chamber": 1, "value": {"curtain_left": True}},
+    {"type": "set_vent", "chamber": 1, "value": {"curtain_left": "50"}},
+    {"type": "set_vent", "chamber": 1, "value": {"door": 50}},
+    {"type": "set_vent", "chamber": 1, "value": {}},
+    {"type": "set_vent", "chamber": 1, "value": 50},
+    {"type": "set_vent", "chamber": 1, "value": [50]},
+])
+def test_vent_validation_422(s, body):
+    r = s.post(f"{API}/device/{DEV}/command", json=body, timeout=10)
+    assert r.status_code == 422, r.text
+
+
+def test_manual_mode_and_vent_gradual(s):
+    cmd(s, {"type": "set_mode", "chamber": 1, "value": "manual"})
+    st = wait_for(s, lambda x: x["chambers"][1]["mode"] == "manual")
+    assert st["chambers"][1]["mode"] == "manual"
+    cur = st["chambers"][1]
+    tgt_l = 90 if cur["curtain_left"] < 50 else 10
+    cmd(s, {"type": "set_vent", "chamber": 1, "value": {"curtain_left": tgt_l, "curtain_right": tgt_l, "chimney": 100 - tgt_l}})
+    st = wait_for(s, lambda x: x["chambers"][1]["manual"]["curtain_left"] == tgt_l)
+    m = st["chambers"][1]["manual"]
+    assert m == {"curtain_left": tgt_l, "curtain_right": tgt_l, "chimney": 100 - tgt_l}
+    from datetime import datetime
+    a, ta = st["chambers"][1]["curtain_left"], datetime.fromisoformat(st["ts"])
+    time.sleep(3)
+    st2 = state(s)
+    b, tb = st2["chambers"][1]["curtain_left"], datetime.fromisoformat(st2["ts"])
+    dt = (tb - ta).total_seconds()
+    step = abs(b - a)
+    assert 0 < step <= 3 * (dt + 1) + 0.5, (a, b, dt)   # gradual, ~3%/s
+    assert (b - a) * (tgt_l - a) > 0       # moving toward target
+    st = wait_for(s, lambda x: abs(x["chambers"][1]["curtain_left"] - tgt_l) < 0.5, timeout=40)
+    assert abs(st["chambers"][1]["curtain_left"] - tgt_l) < 0.5
+    assert abs(st["chambers"][1]["chimney"] - (100 - tgt_l)) < 0.5
+    # back to auto -> PLC overrides (moves away from manual target toward computed demand)
+    cmd(s, {"type": "set_mode", "chamber": 1, "value": "auto"})
+    st = wait_for(s, lambda x: x["chambers"][1]["mode"] == "auto", timeout=20)
+    assert st["chambers"][1]["mode"] == "auto"
+
+
+def test_vent_in_auto_ignored_by_plc(s):
+    st = state(s)
+    assert st["chambers"][1]["mode"] == "auto"
+    before = st["chambers"][1]["curtain_left"]
+    tgt = 100 if before < 50 else 0
+    cmd(s, {"type": "set_vent", "chamber": 1, "value": {"curtain_left": tgt}})
+    time.sleep(3)
+    after = state(s)["chambers"][1]["curtain_left"]
+    # In auto mode the PLC should not track the manual target to the extreme
+    assert abs(after - tgt) > 5, (before, after)
+
+
+# Daily usage
+def test_usage_daily(s):
+    d = s.get(f"{API}/usage/daily?days=7", timeout=10).json()["days"]
+    assert len(d) == 7
+    for e in d:
+        assert set(e) >= {"date", "kwh", "water_m3"}
+    assert d[-1]["kwh"] > 0 and d[-1]["water_m3"] > 0
+    assert d == sorted(d, key=lambda e: e["date"])
+
+
+# CSV export
+def test_history_csv(s):
+    r = s.get(f"{API}/history/csv?chamber=0&hours=24", timeout=20)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers.get("content-disposition", "")
+    txt = r.content.decode("utf-8")
+    assert txt.startswith("\ufeff")
+    lines = txt.lstrip("\ufeff").strip().split("\n")
+    hdr = lines[0].split(";")
+    assert hdr[0] == "czas" and len(hdr) == 7 and "kurtyna_L_zamkn_%" in hdr
+    assert len(lines) > 1
+    row = lines[-1].split(";")
+    assert len(row) == 7
+    assert "." not in ";".join(row[1:])  # comma decimals
+
+
+def test_history_csv_closed_pct(s):
+    h = s.get(f"{API}/history?hours=1", timeout=10).json()["history"]["0"][-1]
+    txt = s.get(f"{API}/history/csv?chamber=0&hours=1", timeout=20).content.decode("utf-8")
+    row = txt.strip().split("\n")[-1].split(";")
+    assert float(row[4].replace(",", ".")) == round(100 - h["curtain_left"], 1)
+
+
+def test_history_csv_404(s):
+    assert s.get(f"{API}/history/csv?chamber=9&hours=24", timeout=10).status_code == 404
+
+
+# Broker settings
+ORIG_BROKER = {"host": "broker.hivemq.com", "port": 1883, "username": "", "tls": False,
+               "prefix": "emgt-fatek-7f3a9c", "device_id": "chlodnia-01"}
+
+
+@pytest.mark.parametrize("patch", [{"host": "bad host"}, {"port": 0}, {"port": 70000},
+                                   {"prefix": "a/#"}, {"prefix": ""}, {"device_id": "a/b"}])
+def test_broker_validation_422(s, patch):
+    r = s.put(f"{API}/broker", json={**ORIG_BROKER, **patch}, timeout=10)
+    assert r.status_code == 422, r.text
+
+
+def test_broker_reconnect_same(s):
+    try:
+        r = s.put(f"{API}/broker", json=ORIG_BROKER, timeout=20)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["broker_host"] == "broker.hivemq.com" and d["broker_port"] == 1883
+        assert d["username"] == "" and d["has_password"] is False and d["tls"] is False
+        ok = False
+        for _ in range(40):
+            time.sleep(1)
+            if s.get(f"{API}/health", timeout=10).json().get("device_online"):
+                ok = True
+                break
+        assert ok, "device did not come back online within 40s"
+        c = s.get(f"{API}/config", timeout=10).json()
+        assert c["prefix"] == "emgt-fatek-7f3a9c" and c["device_id"] == DEV
+        assert {"username", "has_password", "tls"} <= set(c)
+    finally:
+        if s.get(f"{API}/config", timeout=10).json().get("prefix") != ORIG_BROKER["prefix"]:
+            s.put(f"{API}/broker", json=ORIG_BROKER, timeout=20)
