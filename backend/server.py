@@ -383,10 +383,16 @@ async def history_sampler():
             continue
         ts = now_iso()
         docs = [{"chamber": ch["id"], "name": ch["name"], "temp": ch["temp"],
-                 "humidity": ch["humidity"], "co2": ch["co2"], "ts": ts}
+                 "humidity": ch["humidity"], "co2": ch["co2"],
+                 "curtain_left": ch.get("curtain_left"), "curtain_right": ch.get("curtain_right"),
+                 "chimney": ch.get("chimney"), "ts": ts}
                 for ch in st["chambers"]]
+        plant = st.get("plant") or {}
         try:
             await db.plc_history.insert_many(docs)
+            if plant:
+                await db.plc_plant_history.insert_one(
+                    {"power_kw": plant.get("power_kw"), "water_lpm": plant.get("water_lpm"), "ts": ts})
         except Exception as e:
             logger.warning("history insert failed: %s", e)
 
@@ -426,7 +432,7 @@ class ThresholdIn(BaseModel):
 
 @api.get("/")
 async def root():
-    return {"message": "Fatek MQTT cold-store gateway"}
+    return {"message": "Fatek MQTT piggery gateway"}
 
 
 @api.get("/config")
@@ -524,7 +530,9 @@ async def history(hours: int = 3):
     out: dict = {}
     for d in docs:
         out.setdefault(str(d["chamber"]), []).append(d)
-    return {"history": out}
+    plant = await db.plc_plant_history.find(
+        {"ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1).to_list(2000)
+    return {"history": out, "plant": plant}
 
 
 @app.websocket("/api/ws")
