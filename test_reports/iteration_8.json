@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 8 tested the mocked alarm notifications (alarm-settings CRUD, validation, roles, test send, notifier start/no-repeat/cleared), user attribution in the event log with filter chips, the admin-only alarm-recipients UI, and the green accent redesign at 390x844. Backend: 15/15 pytest passed (run with -n0). Frontend: all requested flows passed. No critical issues. A few minor validation and UX gaps are listed below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/alarm-settings", "issue": "PHONE_RX ^\\+?[0-9 ]{7,20}$ counts spaces toward the length. '1 2 3 4' is accepted and stored as '1234', and '+  1 2 3 4' is stored as '+1234'. Fix: strip spaces first, then validate ^\\+?[0-9]{9,15}$."},
+      {"endpoint": "PUT /api/alarm-settings", "issue": "Duplicate recipients are not removed: a@b.pl and A@B.pl are both stored as 'a@b.pl'. The same address would get two notifications, and the frontend key `${type}-${value}` collides (React duplicate-key warning). Fix: deduplicate after normalising."},
+      {"endpoint": "alarm_notifier", "issue": "alarm_active is in memory only. After a backend restart or hot reload, every alarm that is still active sends a new 'ALARM' notification, and a 'Koniec alarmu' for an alarm that ended during downtime is lost. Consider persisting alarm_active in Mongo."},
+      {"endpoint": "alarm_notifier", "issue": "If an alarm starts while there are 0 recipients (or notifications are disabled), alarm_active is still set. A recipient added afterwards gets nothing until the 30-min reminder. This is acceptable, but worth knowing."},
+      {"endpoint": "alarm_notifier", "issue": "If the device goes offline while an alarm is active, the loop skips (is_online false), so no 'cleared' or reminder notice is sent. A 'device offline' notification may be wanted later."},
+      {"endpoint": "PUT /api/alarm-settings", "issue": "The event message 'Odbiorcy alarmów: N' is the same when only 'enabled' is toggled. Include the on/off state in the message so the action history makes sense."},
+      {"endpoint": "_detect_alarms / set_threshold", "issue": "Float thresholds are not rounded in the messages, e.g. 'temp 19.4°C > 14.399999999999999°C'. Round temp_max (e.g. to 1 decimal) in ThresholdIn or in the message formatting."},
+      {"endpoint": "POST /api/alarm-settings/test", "issue": "With 0 recipients or notifications disabled it returns 200 silently and stores nothing. The UI disables the button when there are 0 recipients, but not when disabled=false, and still shows the 'test sent' toast."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AlarmRecipientsCard", "issue": "When notifications are disabled the alarm-test button stays enabled and shows a success toast, although nothing is stored.", "selector": "[data-testid='alarm-test']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Ustawienia > Odbiorcy alarmów", "issues": ["recipient-type is a native <select>. This is minor but inconsistent with the styled UI (same note as for the role picker in iteration 7)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration8_alarms.py", "/app/backend/tests/restore_state_it8.py", "/app/test_reports/pytest/iteration8.xml"],
+  "action_items": [
+    "Tighten phone validation (validate after stripping spaces, 9-15 digits)",
+    "Deduplicate recipients after normalising",
+    "Optional: persist alarm_active so restarts do not re-send or lose notifications",
+    "Optional: round thresholds in alarm messages; include the enabled state in the 'Odbiorcy alarmów' event; disable the test button when notifications are disabled"
+  ],
+  "critical_code_review_comments": [
+    "Reminder logic was checked in code: the first alarm sends 'alarm', then 'reminder' when now-last >= ALARM_REMIND_S (1800s), and 'cleared' when the alarm ends. Verified live that the alarm is sent only once over 12s+ (no 5s repeat) and that 'Koniec alarmu: Komora 1' is sent.",
+    "meta.user attribution is present for device_command, set_threshold, simulator_toggle, set_broker (code review only, broker save not executed) and put_alarm_settings. Notification events have meta {kind} with no user, which is expected.",
+    "server.py is 932 lines; alarm/notification code could move to its own module.",
+    "WatchFiles reloads the backend when files under /app/backend/tests change. This resets the simulator's in-memory state (chamber 0 came back in manual mode)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration8_alarms.py (new)", "/app/backend/tests/restore_state_it8.py (new)"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% of requested flows"},
+  "test_credentials": "admin@chlewnia.pl / Wentylacja!2026 (unchanged)",
+  "seed_data_creation": "Temporary test_it8_* and test_it8ui_* users were created and deleted. Final state checked: recipients empty, enabled=true, alarm_notifications empty, login_attempts empty, thresholds 26/28/30 with CO2 3000, setpoints 20/22/24, chamber 3 off, all modes auto, simulator on, device online, only the admin user exists.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with -n0. Under xdist the notifier test interferes with the alarm-settings tests through shared recipients. Run restore_state_it8.py afterwards to reset state; creating files in backend/tests triggers a backend reload, so wait about 30s for the SIM to reconnect. UI at 390x844: no #007AFF found anywhere; active nav, chamber tab inset underline, AUTO/RĘCZNY, slider range, chimney gauge, CSV range and log chips are all rgb(52,165,106); scrollWidth is 390 on every view. The alarm card is hidden for viewer and operator."
+}

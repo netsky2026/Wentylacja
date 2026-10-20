@@ -70,7 +70,7 @@ export const AlarmRecipientsCard = ({ t }) => {
           onKeyDown={(e) => e.key === "Enter" && add()} />
         <button className="sp-btn" style={{ width: 44, height: "auto" }} onClick={add} data-testid="recipient-add" aria-label="add"><Plus size={16} /></button>
       </div>
-      <button className="action-btn" onClick={test} disabled={!cfg.recipients.length} data-testid="alarm-test"
+      <button className="action-btn" onClick={test} disabled={!cfg.recipients.length || !cfg.enabled} data-testid="alarm-test"
         style={{ width: "100%", padding: 9, marginTop: 10, fontSize: 13 }}><Send size={14} /> {t.sendTest}</button>
       {cfg.recent.length > 0 && (
         <div style={{ marginTop: 12 }} data-testid="alarm-recent">

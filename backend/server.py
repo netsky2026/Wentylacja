@@ -545,7 +545,13 @@ async def send_alarm(subject: str, body: str, kind: str):
     await gateway._event("info", f"Powiadomienie ({len(recipients)} odb., tryb testowy): {subject}", {"kind": kind})
 
 
+async def save_alarm_state():
+    await db.alarm_state.update_one({"_id": "main"}, {"$set": {"active": alarm_active}}, upsert=True)
+
+
 async def alarm_notifier():
+    doc = await db.alarm_state.find_one({"_id": "main"}) or {}
+    alarm_active.update(doc.get("active", {}))
     while True:
         await asyncio.sleep(5)
         st = gateway.latest_state
@@ -555,16 +561,20 @@ async def alarm_notifier():
         try:
             for ch in st.get("chambers", []):
                 cid, name = ch["id"], f"Komora {ch['id'] + 1}"
+                key = str(cid)
                 if ch.get("alarm"):
-                    last = alarm_active.get(cid)
+                    last = alarm_active.get(key)
                     if last is None:
-                        alarm_active[cid] = now
+                        alarm_active[key] = now
+                        await save_alarm_state()
                         await send_alarm(f"ALARM: {name}", alarm_reason(ch), "alarm")
                     elif now - last >= ALARM_REMIND_S:
-                        alarm_active[cid] = now
+                        alarm_active[key] = now
+                        await save_alarm_state()
                         await send_alarm(f"PRZYPOMNIENIE – ALARM trwa: {name}", alarm_reason(ch), "reminder")
-                elif cid in alarm_active:
-                    alarm_active.pop(cid)
+                elif key in alarm_active:
+                    alarm_active.pop(key)
+                    await save_alarm_state()
                     await send_alarm(f"Koniec alarmu: {name}", f"Temp {ch['temp']}°C, CO₂ {int(ch['co2'])} ppm", "cleared")
         except Exception as e:
             logger.warning("alarm notifier failed: %s", e)
@@ -739,6 +749,8 @@ async def get_thresholds():
 async def set_threshold(chamber: int, body: ThresholdIn, user: dict = Depends(require("operator"))):
     if chamber not in DEFAULT_THRESHOLDS:
         raise HTTPException(404, "unknown chamber")
+    body.temp_max = round(body.temp_max, 1)
+    body.co2_max = float(round(body.co2_max))
     THRESHOLDS[chamber] = {"temp_max": body.temp_max, "co2_max": body.co2_max}
     await db.chamber_thresholds.update_one(
         {"chamber": chamber},
@@ -802,7 +814,7 @@ class AlarmSettingsIn(BaseModel):
 
 
 EMAIL_RX = r"^[^@\s;,]+@[^@\s;,]+\.[^@\s;,]+$"
-PHONE_RX = r"^\+?[0-9 ]{7,20}$"
+PHONE_RX = r"^\+?[0-9]{9,15}$"
 
 
 @api.get("/alarm-settings", dependencies=[Depends(require("admin"))])
@@ -817,17 +829,22 @@ async def get_alarm_settings():
 async def put_alarm_settings(body: AlarmSettingsIn, user: dict = Depends(require("admin"))):
     recs = []
     for r in body.recipients:
-        v = r.value.strip()
+        v = r.value.strip().lower() if r.type == "email" else re.sub(r"[\s-]", "", r.value)
         if not re.match(EMAIL_RX if r.type == "email" else PHONE_RX, v):
-            raise HTTPException(422, f"invalid {r.type}: {v}")
-        recs.append({"type": r.type, "value": v.replace(" ", "") if r.type == "sms" else v.lower()})
+            raise HTTPException(422, f"invalid {r.type}: {r.value}")
+        if not any(x["type"] == r.type and x["value"] == v for x in recs):
+            recs.append({"type": r.type, "value": v})
     await db.alarm_settings.update_one({"_id": "main"}, {"$set": {"enabled": body.enabled, "recipients": recs}}, upsert=True)
-    gateway.log_event_sync("info", f"Odbiorcy alarmów: {len(recs)}", {"user": user["email"]})
+    gateway.log_event_sync("info", f"Powiadomienia o alarmach {'WŁ.' if body.enabled else 'WYŁ.'}, odbiorcy: {len(recs)}",
+                           {"user": user["email"]})
     return await get_alarm_settings()
 
 
 @api.post("/alarm-settings/test")
 async def test_alarm(user: dict = Depends(require("admin"))):
+    cfg = await db.alarm_settings.find_one({"_id": "main"}) or {}
+    if not cfg.get("enabled", True) or not cfg.get("recipients"):
+        raise HTTPException(409, "Notifications disabled or no recipients")
     await send_alarm("TEST: Marco Polo Wentylacja", f"Powiadomienie testowe wysłane przez {user['email']}", "test")
     return await get_alarm_settings()
 
