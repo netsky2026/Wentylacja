@@ -66,3 +66,10 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Broker: SSRF block (host must resolve to public IP), password Fernet-encrypted (BROKER_SECRET).
 - MQTT: only exact state topic, strict sanitize (exactly chambers 0..2, finite numbers); CSV cell escaping; events/history limits clamped.
 - Tested iteration_6/7. Known accepted limits: lockout can be triggered on a known email (15-min DoS), DNS-rebinding TOCTOU on admin-only broker change, public HiveMQ broker unauthenticated until user sets a private broker.
+
+## 2026-06 Update 6
+- Alarm notifications (MOCKED delivery, provider TBD by user): admin recipients list (email/SMS) in Ustawienia, notify on alarm start, reminder every 30 min, end-of-alarm notice; state persisted (alarm_state); stored in alarm_notifications; test send.
+- Action history: events carry meta.user; Dane event log shows user + filters (Wszystkie/Działania/Alarmy).
+- Green accent theme (#34A56A).
+- Tested iteration_8/9 (100%).
+- Next: connect real e-mail/SMS provider (Resend/Twilio), deploy when user decides.

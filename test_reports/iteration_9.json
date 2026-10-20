@@ -1,0 +1,28 @@
+{
+  "summary": "Retest of the iteration 8 minor fixes for mocked alarm notifications. Backend: 14/14 pytest passed (13 in the main run, plus the restart-persistence test re-run once the public HiveMQ broker was back). The fixes work: phone numbers are validated after stripping spaces and dashes (9-15 digits); duplicates are removed after normalising; the event message reads 'Powiadomienia o alarmach WŁ./WYŁ., odbiorcy: N' with meta.user; POST /alarm-settings/test returns 409 when notifications are disabled or there are no recipients; thresholds are rounded (14.399999 -> 14.4, co2 2999.6 -> 3000, alarm body shows '> 5.0°C'); alarm_active persists in db.alarm_state, so after a real 'supervisorctl restart backend' no duplicate ALARM is sent and 'Koniec alarmu: Komora 1' still arrives when the alarm clears. Frontend at 390x844: admin login and live dashboard work (broker connected, device online). The alarm-test button is disabled with 0 recipients or with notifications off, and enabled otherwise. A test send appears under recent. An invalid phone '1 2 3 4' shows an error toast and adds no row. '+48 600-100-200' is shown as '+48600100200'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Ustawienia > Odbiorcy alarmów", "issues": ["The disabled 'Wyślij test' button (alarm-test) looks almost the same as the enabled one. Consider reduced opacity or cursor:not-allowed.", "recipient-type is still a native <select> (carried over from iteration 8)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration9_alarm_fixes.py", "/app/test_reports/pytest/iteration9.xml", "/app/test_reports/pytest/iteration9_restart.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Environment note: broker.hivemq.com (public broker) was unreachable for about 7 minutes during testing. GATEWAY logged 'Unspecified error' and 'Keep alive timeout', and device_online was false. While offline, the alarm_notifier skips entirely, so alarms that start or clear during a broker outage are not notified. This is expected for a public test broker, but use a private broker in production.",
+    "/api/health now requires auth (401 without a cookie). Older tests or monitoring that call it unauthenticated will fail.",
+    "server.py is still about 950 lines; the alarm/notifier code could move to its own module."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration9_alarm_fixes.py (new)"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% of requested flows"},
+  "test_credentials": "admin@chlewnia.pl / Wentylacja!2026 (unchanged)",
+  "seed_data_creation": "None kept. State restored: recipients empty with enabled=true, alarm_notifications/alarm_state/login_attempts cleared, thresholds 26/28/30 with CO2 3000, setpoints 20/22/24, chamber 3 off, modes auto, simulator on, device online, only the admin user exists.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run pytest with -n0. Creating or editing files under backend/tests triggers a backend reload, and the restart test runs 'sudo supervisorctl restart backend'. The SIM/GATEWAY can take 30s to several minutes to reconnect to the public HiveMQ broker; poll the authenticated /api/health for device_online before running notifier tests. Afterwards, run restore_state_it8.py and clear alarm_state. The alarm-enabled checkbox is controlled and updates after the async save, so in Playwright use click() plus a wait, not uncheck()."
+}

@@ -209,3 +209,5 @@ body {
 
 ::selection { background: rgba(52,165,106,0.35); }
 input[type=checkbox] { accent-color: #34A56A; }
+
+.action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
