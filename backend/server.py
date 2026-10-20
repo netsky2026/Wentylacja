@@ -811,7 +811,10 @@ async def delete_device(device_id: str, user: dict = Depends(require("superadmin
     if device_id not in DEVICES:
         raise HTTPException(404, "Device not found")
     label = dev_label(device_id)
-    cid = DEVICES[device_id]["client_id"]
+    cid = DEVICES.pop(device_id)["client_id"]
+    gateway.states.pop(device_id, None)
+    gateway.last_seen.pop(device_id, None)
+    sims.sync()
     await db.devices.delete_one({"device_id": device_id})
     for coll in ("device_thresholds", "plc_history", "plc_plant_history", "plc_events"):
         await db[coll].delete_many({"device_id": device_id})

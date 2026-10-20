@@ -1,0 +1,26 @@
+{
+  "summary": "Retested the iteration_10 fixes; all verified. Backend: 3/3 new retests pass (tests/test_it11_reuse_ws.py) and the 14/14 regression in test_multitenant.py passes (run twice). Device re-use: after DELETE, plc_events, plc_history, plc_plant_history, device_thresholds and the alarm_active keys for the device are all 0 in the DB. When the same device_id is re-created under client B, B's viewer sees no client A events, an empty history and plant, zero usage/daily, a header-only CSV and default thresholds. /api/events?device_id is scoped by the device's client_id: an injected foreign-client event is hidden from both the B user and the superadmin, and a client A user gets 403/404 on B's device. The WS session of a deleted user was closed with code 4401 after 17.7s. UI at 390x844: a stale localStorage 'device' (ghost id) is removed after login; kowalski-a K1..K6 all fit (scrollWidth 360 == clientWidth 360, K6 right edge at 375 inside the 376 container); the role select shows 'Operator' fully (labels are now Podgląd/Operator/Administrator, select is 154px wide); no horizontal overflow (doc width 390). Superadmin login, device switching and live data work.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/devices/{id}", "issue": "Theoretical race, not reproduced. The purge (delete_many) runs before load_registry, sims.sync and gateway.states.pop, with several awaits in between. history_sampler can still insert one sample for the deleted device in that window. Suggest popping gateway.states, gateway.last_seen and the DEVICES entry first, then purging."},
+      {"endpoint": "Users", "issue": "No endpoint exists to change a user's role or client, so only the delete path of ws_revalidator could be tested. The tv-bump path (password change) is covered by code but was not exercised over WS."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/tests/test_it11_reuse_ws.py", "/app/tests/test_multitenant.py", "/app/test_reports/pytest/pytest_it11.xml", "/app/test_reports/pytest/pytest_multitenant_it11.xml"],
+  "action_items": ["Optional: reorder delete_device so in-memory state is dropped before the DB purge, closing the sampler race"],
+  "critical_code_review_comments": [
+    "server.py is still about 1035 lines, over the 700-line guideline. Split it into simulator, gateway and routes modules.",
+    "Old test files in /app/backend/tests (test_piggery_mqtt.py, test_iteration7/8/9*.py, restore_state_it8.py) target removed endpoints. Delete or update them.",
+    "Found and removed 6 plc_events, 8 plc_history and 3 plc_plant_history orphan rows for test-* device ids. They were not reproduced after the fix, so they were most likely left over from the iteration_10 probe."
+  ],
+  "updated_files": ["/app/tests/test_it11_reuse_ws.py", "/app/tests/it11_cleanup.py"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% of retested items"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026 works",
+  "seed_data_creation": "None kept. Only Marco Polo (chlodnia-01, 3 ch) and Ferma Kowalski (kowalski-a, 6 ch) remain, with superadmin as the only user. Cleared login_attempts, alarm_notifications and alarm recipients. Thresholds are 28/3000 everywhere.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run from /app/tests, not /app/backend/tests, to avoid uvicorn reloads: REACT_APP_BACKEND_URL=... pytest tests/test_multitenant.py tests/test_it11_reuse_ws.py -p no:cacheprovider. Then run python tests/it11_cleanup.py to purge orphans, login_attempts and alarm_notifications.",
+  "rca of the issue": "Iteration 10 leak fixed: delete_device purges all per-device collections, and events() filters by the device's current client_id. Revocation fixed: ws_revalidator checks role/client_id/tv every 30s and closes sockets with code 4401."
+}
