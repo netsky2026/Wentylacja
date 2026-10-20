@@ -33,3 +33,9 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - P1: wykresy historii (temp/wilgotność/CO₂) w zakładce Dane
 - P1: edytowalne nastawy progów alarmu / wilgotności
 - P2: autoryzacja, broker TLS produkcyjny, powiadomienia push o alarmach
+
+## 2026-06 Update (Piggery main screen)
+- Main screen refactored to piggery: full-width chamber tiles (temp, humidity, CO2), curtains as windows with roller blinds (value = % closed, 100 = closed; backend sends % open, UI shows 100-open), chimney as circular gauge, heating indicator.
+- Plant tile at bottom: power kW + kWh total, water l/min + m3 total.
+- Removed cold-store leftovers (defrost/cooling/door). Simulator humidity/CO2 made mean-reverting.
+- Next: Dane tab (history charts for new metrics, thresholds UI, push notifications), testing agent run.

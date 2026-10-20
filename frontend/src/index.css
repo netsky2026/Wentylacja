@@ -98,7 +98,7 @@ body {
 
 .tile-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 .tile {
@@ -177,3 +177,14 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+.vent-row { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; width: 100%; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.win-frame { position: relative; width: 54px; height: 64px; border: 3px solid #4a4f55; border-radius: 3px; overflow: hidden; background: #0d0d0d; }
+.win-glass { position: absolute; inset: 0; background: linear-gradient(160deg, #1d2a33 0%, #152029 100%); }
+.win-mullion-v { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #4a4f55; }
+.win-mullion-h { position: absolute; top: 50%; left: 0; right: 0; height: 2px; margin-top: -1px; background: #4a4f55; }
+.win-blind { position: absolute; left: 0; right: 0; top: 0; transition: height 0.6s ease;
+  background: repeating-linear-gradient(180deg, #8a8f96 0px, #8a8f96 4px, #6f747b 4px, #6f747b 5px); }
+.win-blind-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #b5bac0; }
+.win-box { position: absolute; left: 0; right: 0; top: 0; height: 4px; background: #4a4f55; }
+.plant-tile { cursor: default; }

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
-import { Snowflake, Thermometer, Droplets, Wind, Power, DoorOpen, DoorClosed,
-  AlertTriangle, Minus, Plus, LayoutGrid, Database, Fan } from "lucide-react";
+import { PiggyBank, Thermometer, Droplets, Wind, Power, Flame, Zap, Droplet,
+  AlertTriangle, Minus, Plus, LayoutGrid, Database } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { I18N } from "@/i18n";
+import { CurtainWindow, ChimneyGauge } from "@/components/Gauges";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -18,6 +20,9 @@ export default function App() {
   const [simOn, setSimOn] = useState(true);
   const [config, setConfig] = useState(null);
   const [events, setEvents] = useState([]);
+  const [history, setHistory] = useState({});
+  const [thresholds, setThresholds] = useState([]);
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
   const wsRef = useRef(null);
 
   const loadHealth = useCallback(async () => {
@@ -29,13 +34,41 @@ export default function App() {
     } catch (e) { /* noop */ }
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/history?hours=3`);
+      setHistory(data.history || {});
+    } catch (e) { /* noop */ }
+  }, []);
+
+  const loadThresholds = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/thresholds`);
+      setThresholds(data.thresholds || []);
+    } catch (e) { /* noop */ }
+  }, []);
+
+  const saveThreshold = useCallback(async (chamber, temp_max, co2_max) => {
+    await axios.put(`${API}/thresholds/${chamber}`, { temp_max, co2_max });
+    loadThresholds();
+  }, [loadThresholds]);
+
+  const requestNotif = useCallback(async () => {
+    if (typeof Notification === "undefined") return;
+    const p = await Notification.requestPermission();
+    setNotifPerm(p);
+  }, []);
+
   useEffect(() => {
     axios.get(`${API}/config`).then(({ data }) => setConfig(data));
     axios.get(`${API}/events?limit=50`).then(({ data }) => setEvents(data.events || []));
     loadHealth();
+    loadHistory();
+    loadThresholds();
     const hi = setInterval(loadHealth, 3000);
-    return () => clearInterval(hi);
-  }, [loadHealth]);
+    const hh = setInterval(loadHistory, 15000);
+    return () => { clearInterval(hi); clearInterval(hh); };
+  }, [loadHealth, loadHistory, loadThresholds]);
 
   useEffect(() => {
     const wsUrl = `${BACKEND_URL.replace(/^http/, "ws")}/api/ws`;
@@ -49,6 +82,11 @@ export default function App() {
         const msg = JSON.parse(e.data);
         if (msg.type === "state") { setState(msg.payload); setOnline(true); }
         else if (msg.type === "event") setEvents((p) => [msg.event, ...p].slice(0, 50));
+        else if (msg.type === "alarm") {
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try { new Notification(msg.title, { body: msg.body }); } catch (err) { /* noop */ }
+          }
+        }
       };
     };
     connect();
@@ -71,7 +109,7 @@ export default function App() {
         {/* Header */}
         <header className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Snowflake size={22} color="#007AFF" />
+            <PiggyBank size={22} color="#9aa7b4" />
             <span className="font-head" data-testid="app-title" style={{ fontSize: 20, fontWeight: 700 }}>{t.appName}</span>
           </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>
@@ -128,6 +166,7 @@ export default function App() {
                   onClose={() => setSelected(null)} />
               </div>
             )}
+            {state?.plant && <PlantTile plant={state.plant} t={t} />}
           </div>
         ) : (
           <DetailsView t={t} config={config} chambers={chambers} events={events}
@@ -163,21 +202,28 @@ function ChamberTile({ ch, t, active, onClick }) {
         </span>
         {ch.alarm
           ? <AlertTriangle size={14} color="#FF3B30" data-testid={`chamber-${ch.id}-alarm`} />
-          : ch.cooling ? <Snowflake size={14} color="#007AFF" /> : null}
+          : ch.heating ? <Flame size={14} color="#c9a46a" data-testid={`chamber-${ch.id}-heating`} /> : null}
       </div>
 
-      <div className="font-head" data-testid={`chamber-${ch.id}-temp`}
-        style={{ fontSize: 38, fontWeight: 700, lineHeight: 1, color: ch.alarm ? "var(--accent)" : "#5AC8FA", margin: "8px 0 2px" }}>
-        {ch.temp?.toFixed(1)}<span style={{ fontSize: 15, color: "var(--muted)" }}>°C</span>
+      <div className="flex items-end justify-between" style={{ width: "100%", marginTop: 8 }}>
+        <div className="font-head" data-testid={`chamber-${ch.id}-temp`}
+          style={{ fontSize: 38, fontWeight: 700, lineHeight: 1, color: ch.temp_alarm ? "var(--accent)" : "var(--text)" }}>
+          {ch.temp?.toFixed(1)}<span style={{ fontSize: 15, color: "var(--muted)" }}>°C</span>
+        </div>
+        <div className="flex flex-col items-end" style={{ gap: 4 }}>
+          <span className="flex items-center gap-1" data-testid={`chamber-${ch.id}-humidity`} style={{ fontSize: 13, color: "var(--muted)" }}>
+            <Droplets size={13} /> {Math.round(ch.humidity)}%
+          </span>
+          <span className="flex items-center gap-1" data-testid={`chamber-${ch.id}-co2`} style={{ fontSize: 13, color: ch.co2_alarm ? "var(--accent)" : "var(--muted)" }}>
+            <Wind size={13} /> {Math.round(ch.co2)} ppm
+          </span>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between" style={{ width: "100%", marginTop: 6 }}>
-        <span className="flex items-center gap-1" data-testid={`chamber-${ch.id}-humidity`} style={{ fontSize: 12, color: "#64D2FF" }}>
-          <Droplets size={12} /> {Math.round(ch.humidity)}%
-        </span>
-        <span className="flex items-center gap-1" data-testid={`chamber-${ch.id}-co2`} style={{ fontSize: 12, color: ch.co2 > 1500 ? "var(--accent)" : "#FFD60A" }}>
-          <Wind size={12} /> {Math.round(ch.co2)}
-        </span>
+      <div className="vent-row">
+        <CurtainWindow open={ch.curtain_left} label={t.curtainLeft} testid={`chamber-${ch.id}-curtain-left`} />
+        <ChimneyGauge open={ch.chimney} label={t.chimney} testid={`chamber-${ch.id}-chimney`} />
+        <CurtainWindow open={ch.curtain_right} label={t.curtainRight} testid={`chamber-${ch.id}-curtain-right`} />
       </div>
     </button>
   );
@@ -198,18 +244,13 @@ function ChamberDetail({ ch, t, send, onClose }) {
       </div>
 
       <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        <Sensor icon={<Thermometer size={11} />} label={t.temp} value={ch.temp?.toFixed(1)} unit="°C" color="#5AC8FA" warn={ch.alarm} />
-        <Sensor icon={<Droplets size={11} />} label={t.humidity} value={Math.round(ch.humidity)} unit="%" color="#64D2FF" />
-        <Sensor icon={<Wind size={11} />} label={t.co2} value={Math.round(ch.co2)} unit="ppm" color="#FFD60A" warn={ch.co2 > 1500} />
+        <Sensor icon={<Thermometer size={11} />} label={t.temp} value={ch.temp?.toFixed(1)} unit="°C" color="var(--text)" warn={ch.temp_alarm} />
+        <Sensor icon={<Droplets size={11} />} label={t.humidity} value={Math.round(ch.humidity)} unit="%" color="var(--text)" />
+        <Sensor icon={<Wind size={11} />} label={t.co2} value={Math.round(ch.co2)} unit="ppm" color="var(--text)" warn={ch.co2_alarm} />
       </div>
 
       <div className="flex flex-wrap gap-2 mb-3">
-        <StatusChip on={ch.cooling} icon={<Snowflake size={11} />} label={t.cooling} color="var(--primary)" />
-        <StatusChip on={ch.compressor} icon={<Fan size={11} />} label={t.compressor} color="var(--green)" />
-        <StatusChip on={ch.defrost} icon={<Thermometer size={11} />} label={t.defrost} color="var(--accent)" />
-        <span className="badge" style={{ color: ch.door_open ? "var(--accent)" : "var(--muted)", borderColor: ch.door_open ? "var(--accent)" : "var(--border)" }}>
-          {ch.door_open ? <DoorOpen size={11} /> : <DoorClosed size={11} />} {ch.door_open ? t.doorOpen : t.doorClosed}
-        </span>
+        <StatusChip on={ch.heating} icon={<Flame size={11} />} label={t.heating} />
       </div>
 
       {ch.on && (
@@ -231,7 +272,7 @@ function ChamberDetail({ ch, t, send, onClose }) {
         </div>
       )}
 
-      <div className="grid gap-2" style={{ gridTemplateColumns: ch.on ? "1fr 1fr" : "1fr" }}>
+      <div className="grid gap-2" style={{ gridTemplateColumns: "1fr" }}>
         <button data-testid={`chamber-${ch.id}-power`} onClick={() => send({ type: "chamber_power", chamber: ch.id, value: !ch.on })}
           className="action-btn" style={{
             background: ch.on ? "rgba(255,59,48,0.12)" : "rgba(48,209,88,0.14)",
@@ -240,24 +281,42 @@ function ChamberDetail({ ch, t, send, onClose }) {
           }}>
           <Power size={16} /> {ch.on ? t.turnOff : t.turnOn}
         </button>
-        {ch.on && (
-          <button data-testid={`chamber-${ch.id}-defrost`} onClick={() => send({ type: "defrost", chamber: ch.id, value: !ch.defrost })}
-            className="action-btn" style={{
-              background: ch.defrost ? "rgba(255,59,48,0.12)" : "#141414",
-              color: ch.defrost ? "var(--accent)" : "var(--text)",
-              borderColor: ch.defrost ? "var(--accent)" : "var(--border)",
-            }}>
-            <Thermometer size={16} /> {ch.defrost ? t.stopDefrost : t.startDefrost}
-          </button>
-        )}
       </div>
     </div>
   );
 }
 
-function StatusChip({ on, icon, label, color }) {
+function PlantTile({ plant, t }) {
+  const Cell = ({ icon, label, value, unit, sub, testid }) => (
+    <div className="sensor" data-testid={testid}>
+      <span className="flex items-center gap-1" style={{ color: "var(--muted)", fontSize: 10 }}>{icon}{label}</span>
+      <span className="font-head" style={{ fontSize: 22, fontWeight: 700 }}>
+        {value}<span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}> {unit}</span>
+      </span>
+      <span style={{ fontSize: 10, color: "var(--muted)" }}>{sub}</span>
+    </div>
+  );
   return (
-    <span className="badge" style={{ color: on ? color : "var(--muted)", borderColor: on ? color : "var(--border)", opacity: on ? 1 : 0.6 }}>
+    <div className="panel panel-pad plant-tile" data-testid="plant-tile" style={{ marginTop: 14 }}>
+      <div className="font-head" style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{t.plant}</div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <Cell icon={<Zap size={11} />} label={t.power} value={plant.power_kw?.toFixed(2)} unit="kW"
+          sub={`${t.total}: ${plant.power_kwh?.toFixed(1)} kWh`} testid="plant-power" />
+        <Cell icon={<Droplet size={11} />} label={t.water} value={plant.water_lpm?.toFixed(1)} unit="l/min"
+          sub={`${t.total}: ${(plant.water_total_l / 1000).toFixed(2)} m³`} testid="plant-water" />
+      </div>
+    </div>
+  );
+}
+
+function StatusChip({ on, icon, label, danger }) {
+  const activeColor = danger ? "var(--accent)" : "var(--text)";
+  return (
+    <span className="badge" style={{
+      color: on ? activeColor : "var(--muted)",
+      borderColor: on ? (danger ? "var(--accent)" : "#3a3a3a") : "var(--border)",
+      opacity: on ? 1 : 0.55,
+    }}>
       {icon} {label}
     </span>
   );
@@ -280,11 +339,11 @@ function DetailsView({ t, config, chambers, events, simOn, toggleSim, ts }) {
               {chambers.map((ch) => (
                 <tr key={ch.id} data-testid={`raw-row-${ch.id}`}>
                   <td className="font-head">{ch.name}</td>
-                  <td style={{ color: ch.alarm ? "var(--accent)" : "#5AC8FA" }}>{ch.temp?.toFixed(1)}°C</td>
+                  <td style={{ color: ch.temp_alarm ? "var(--accent)" : "var(--text)" }}>{ch.temp?.toFixed(1)}°C</td>
                   <td>{ch.setpoint?.toFixed(1)}°C</td>
                   <td>{Math.round(ch.humidity)}%</td>
-                  <td>{Math.round(ch.co2)} ppm</td>
-                  <td>{ch.on ? (ch.defrost ? t.defrost : ch.cooling ? t.cooling : t.running) : t.off}</td>
+                  <td style={{ color: ch.co2_alarm ? "var(--accent)" : "var(--text)" }}>{Math.round(ch.co2)} ppm</td>
+                  <td>{ch.on ? (ch.heating ? t.heating : t.running) : t.off}</td>
                 </tr>
               ))}
             </tbody>

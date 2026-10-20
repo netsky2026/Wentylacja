@@ -25,8 +25,8 @@ import random
 import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Any, Optional, List
 
 import paho.mqtt.client as mqtt
 from pydantic import BaseModel, Field
@@ -46,6 +46,14 @@ MQTT_PREFIX = os.environ.get('MQTT_PREFIX', 'emgt-fatek-7f3a9c').strip('/')
 
 DEVICE_ID = "chlodnia-01"
 
+# per-chamber alarm thresholds (loaded from Mongo at startup, defaults below)
+DEFAULT_THRESHOLDS = {
+    0: {"temp_max": 26.0, "co2_max": 3000.0},
+    1: {"temp_max": 28.0, "co2_max": 3000.0},
+    2: {"temp_max": 30.0, "co2_max": 3000.0},
+}
+THRESHOLDS: dict = dict(DEFAULT_THRESHOLDS)
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -63,25 +71,25 @@ def command_topic(device_id: str) -> str:
 
 
 # ============================================================
-# Simulated cold store (external device, own MQTT client)
+# Simulated piggery (chlewnia) — external device, own MQTT client
 # ============================================================
-class ColdStoreSimulator:
+class PiggerySimulator:
     def __init__(self):
         self.enabled = True
+        # chamber: temp control via ventilation (curtains L/R + chimneys) and heating
         self.chambers = [
-            {"id": 0, "name": "Komora 1", "temp": -16.0, "setpoint": -18.0,
-             "humidity": 85.0, "co2": 420.0,
-             "on": True, "cooling": False, "defrost": False, "door_open": False,
-             "compressor": False, "alarm": False, "_defrost_ticks": 0},
-            {"id": 1, "name": "Komora 2", "temp": 4.5, "setpoint": 2.0,
-             "humidity": 90.0, "co2": 650.0,
-             "on": True, "cooling": False, "defrost": False, "door_open": False,
-             "compressor": False, "alarm": False, "_defrost_ticks": 0},
-            {"id": 2, "name": "Komora 3", "temp": 6.0, "setpoint": 4.0,
-             "humidity": 88.0, "co2": 500.0,
-             "on": False, "cooling": False, "defrost": False, "door_open": False,
-             "compressor": False, "alarm": False, "_defrost_ticks": 0},
+            {"id": 0, "name": "Komora 1", "temp": 21.0, "setpoint": 20.0,
+             "humidity": 65.0, "co2": 900.0, "on": True, "heating": False,
+             "curtain_left": 30.0, "curtain_right": 30.0, "chimney": 40.0, "alarm": False},
+            {"id": 1, "name": "Komora 2", "temp": 24.5, "setpoint": 22.0,
+             "humidity": 70.0, "co2": 1100.0, "on": True, "heating": False,
+             "curtain_left": 50.0, "curtain_right": 55.0, "chimney": 60.0, "alarm": False},
+            {"id": 2, "name": "Komora 3", "temp": 18.0, "setpoint": 24.0,
+             "humidity": 60.0, "co2": 800.0, "on": False, "heating": False,
+             "curtain_left": 0.0, "curtain_right": 0.0, "chimney": 0.0, "alarm": False},
         ]
+        # whole-plant metering
+        self.plant = {"power_kw": 0.0, "power_kwh": 128.4, "water_lpm": 0.0, "water_total_l": 5420.0}
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.mc = mqtt.Client(
@@ -111,71 +119,75 @@ class ColdStoreSimulator:
         ch = self.chambers[ci]
         if t == "set_setpoint":
             try:
-                ch["setpoint"] = max(-40.0, min(20.0, float(cmd.get("value"))))
+                ch["setpoint"] = max(5.0, min(35.0, float(cmd.get("value"))))
             except (TypeError, ValueError):
                 pass
         elif t == "chamber_power":
             ch["on"] = bool(cmd.get("value"))
             if not ch["on"]:
-                ch["cooling"] = ch["compressor"] = ch["defrost"] = False
-        elif t == "defrost":
-            if ch["on"]:
-                ch["defrost"] = bool(cmd.get("value"))
-                ch["_defrost_ticks"] = 30 if ch["defrost"] else 0
-                if ch["defrost"]:
-                    ch["cooling"] = ch["compressor"] = False
+                ch["heating"] = False
+                ch["curtain_left"] = ch["curtain_right"] = ch["chimney"] = 0.0
+
+    @staticmethod
+    def _approach(cur, target, rate):
+        if cur < target:
+            return min(target, cur + rate)
+        return max(target, cur - rate)
 
     def _step(self):
         for ch in self.chambers:
             if not ch["on"]:
-                # drift toward ambient when off
-                ch["temp"] += 0.15
-                ch["cooling"] = ch["compressor"] = False
+                ch["temp"] += (18.0 - ch["temp"]) * 0.02  # drift to barn ambient
+                ch["curtain_left"] = self._approach(ch["curtain_left"], 0.0, 4)
+                ch["curtain_right"] = self._approach(ch["curtain_right"], 0.0, 4)
+                ch["chimney"] = self._approach(ch["chimney"], 0.0, 4)
+                ch["heating"] = False
                 ch["alarm"] = False
                 self._sensors(ch)
                 continue
-            # random door events
-            if random.random() < 0.03:
-                ch["door_open"] = not ch["door_open"]
-            if ch["defrost"]:
-                ch["_defrost_ticks"] -= 1
-                ch["temp"] += 0.4
-                if ch["_defrost_ticks"] <= 0:
-                    ch["defrost"] = False
-            else:
-                sp = ch["setpoint"]
-                # thermostat hysteresis
-                if ch["temp"] > sp + 0.5:
-                    ch["cooling"] = True
-                elif ch["temp"] <= sp - 0.5:
-                    ch["cooling"] = False
-                if ch["cooling"]:
-                    ch["temp"] -= 0.35
-                    ch["compressor"] = True
-                else:
-                    ch["temp"] += 0.08
-                    ch["compressor"] = False
-                if ch["door_open"]:
-                    ch["temp"] += 0.2
-            ch["alarm"] = ch["temp"] > ch["setpoint"] + 5.0
+            sp = ch["setpoint"]
+            err = ch["temp"] - sp  # >0 too warm -> ventilate; <0 too cold -> heat
+            # ventilation demand 0..100 from how far above setpoint
+            target_vent = max(0.0, min(100.0, (err + 1.0) * 28.0))
+            ch["curtain_left"] = round(self._approach(ch["curtain_left"], target_vent, 3), 1)
+            ch["curtain_right"] = round(self._approach(ch["curtain_right"], target_vent + 4, 3), 1)
+            ch["chimney"] = round(self._approach(ch["chimney"], target_vent, 4), 1)
+            ch["heating"] = err < -1.0
+            # temperature dynamics
+            vent = (ch["curtain_left"] + ch["curtain_right"] + ch["chimney"]) / 3.0
+            ch["temp"] += 0.05  # animal body heat
+            ch["temp"] -= vent * 0.004  # ventilation cooling
+            if ch["heating"]:
+                ch["temp"] += 0.18
+            ch["temp"] += random.uniform(-0.05, 0.05)
             ch["temp"] = round(ch["temp"], 1)
+            ch["alarm"] = False  # thresholds evaluated by backend gateway
             self._sensors(ch)
+        self._meter()
 
     def _sensors(self, ch):
-        # humidity drifts; rises with defrost/door, falls with active cooling
-        drift = 0.0
-        if ch["defrost"] or ch["door_open"]:
-            drift += 0.6
-        if ch["compressor"]:
-            drift -= 0.4
-        drift += random.uniform(-0.3, 0.3)
-        ch["humidity"] = round(max(40.0, min(99.0, ch["humidity"] + drift)), 1)
-        # CO2 rises when door open, slowly decays otherwise
-        if ch["door_open"]:
-            ch["co2"] += random.uniform(5, 20)
-        else:
-            ch["co2"] += random.uniform(-8, 4)
-        ch["co2"] = round(max(400.0, min(5000.0, ch["co2"])), 0)
+        vent = (ch["curtain_left"] + ch["curtain_right"] + ch["chimney"]) / 3.0 if ch["on"] else 0.0
+        # humidity: animals add, ventilation removes
+        hum_target = (78.0 - vent * 0.3) if ch["on"] else 60.0
+        ch["humidity"] += (hum_target - ch["humidity"]) * 0.03 + random.uniform(-0.3, 0.3)
+        ch["humidity"] = round(max(35.0, min(99.0, ch["humidity"])), 1)
+        # CO2: animals raise it, ventilation lowers it
+        co2_target = (2400.0 - vent * 18.0) if ch["on"] else 500.0
+        ch["co2"] += (co2_target - ch["co2"]) * 0.03 + random.uniform(-10, 10)
+        ch["co2"] = round(max(400.0, min(6000.0, ch["co2"])), 0)
+
+    def _meter(self):
+        # power: base + fans (chimney) + heaters
+        fans = sum(ch["chimney"] for ch in self.chambers if ch["on"]) / 100.0
+        heat = sum(1 for ch in self.chambers if ch.get("heating"))
+        power = 1.2 + fans * 2.5 + heat * 3.0 + random.uniform(-0.2, 0.2)
+        self.plant["power_kw"] = round(max(0.0, power), 2)
+        self.plant["power_kwh"] = round(self.plant["power_kwh"] + power / 3600.0, 3)
+        # water: animals drink (fluctuating)
+        active = sum(1 for ch in self.chambers if ch["on"])
+        lpm = active * random.uniform(0.6, 2.2)
+        self.plant["water_lpm"] = round(lpm, 2)
+        self.plant["water_total_l"] = round(self.plant["water_total_l"] + lpm / 60.0, 2)
 
     def _loop(self):
         while not self._stop.is_set():
@@ -191,6 +203,7 @@ class ColdStoreSimulator:
                 {k: v for k, v in ch.items() if not k.startswith("_")}
                 for ch in self.chambers
             ],
+            "plant": dict(self.plant),
             "ts": now_iso(),
         }
 
@@ -200,6 +213,7 @@ class ColdStoreSimulator:
         try:
             self.mc.publish(state_topic(DEVICE_ID), json.dumps(self.snapshot()), qos=1)
         except Exception as e:
+            logger.warning("SIM publish failed: %s", e)
             logger.warning("SIM publish failed: %s", e)
 
     def start(self):
@@ -253,11 +267,25 @@ class Gateway:
         except Exception:
             return
         prev = self.latest_state
+        self.annotate(payload)
         self.latest_state = payload
         self.last_seen = time.time()
         self._detect_alarms(prev, payload)
         self._schedule_persist(msg.topic, payload)
         self._schedule_broadcast({"type": "state", "topic": msg.topic, "payload": payload})
+
+    def annotate(self, payload):
+        """Overlay the monitoring app's alarm thresholds onto each chamber."""
+        for ch in payload.get("chambers", []):
+            th = THRESHOLDS.get(ch["id"], {})
+            tmax = th.get("temp_max")
+            cmax = th.get("co2_max")
+            ch["temp_max"] = tmax
+            ch["co2_max"] = cmax
+            ch["temp_alarm"] = bool(ch.get("on") and tmax is not None and ch["temp"] > tmax)
+            ch["co2_alarm"] = bool(cmax is not None and ch["co2"] > cmax)
+            ch["alarm"] = bool(ch["temp_alarm"] or ch["co2_alarm"])
+        return payload
 
     def _detect_alarms(self, prev, cur):
         if not cur.get("chambers"):
@@ -266,7 +294,16 @@ class Gateway:
         for ch in cur["chambers"]:
             was = prev_map.get(ch["id"], {}).get("alarm", False)
             if ch.get("alarm") and not was:
-                self._schedule_event("warning", f"ALARM: {ch['name']} {ch['temp']}°C", {"chamber": ch["id"]})
+                reasons = []
+                if ch.get("temp_alarm"):
+                    reasons.append(f"temp {ch['temp']}°C > {ch.get('temp_max')}°C")
+                if ch.get("co2_alarm"):
+                    reasons.append(f"CO₂ {int(ch['co2'])} > {int(ch.get('co2_max'))} ppm")
+                reason = ", ".join(reasons)
+                title = f"ALARM: {ch['name']}"
+                self._schedule_event("warning", f"{title} — {reason}", {"chamber": ch["id"]})
+                self._schedule_broadcast({"type": "alarm", "chamber": ch["id"],
+                                          "title": title, "body": reason})
 
     def _schedule_persist(self, topic, payload):
         if self.loop and not self.loop.is_closed():
@@ -316,7 +353,7 @@ class Gateway:
 
 
 gateway = Gateway()
-simulator = ColdStoreSimulator()
+simulator = PiggerySimulator()
 
 
 async def broadcast(gw: Gateway, data: dict):
@@ -330,12 +367,43 @@ async def broadcast(gw: Gateway, data: dict):
         gw.ws_clients.discard(ws)
 
 
+async def load_thresholds():
+    global THRESHOLDS
+    THRESHOLDS = dict(DEFAULT_THRESHOLDS)
+    async for doc in db.chamber_thresholds.find({}):
+        THRESHOLDS[doc["chamber"]] = {"temp_max": doc["temp_max"], "co2_max": doc["co2_max"]}
+
+
+async def history_sampler():
+    """Persist a downsampled history point per chamber every 15s for charts."""
+    while True:
+        await asyncio.sleep(15)
+        st = gateway.latest_state
+        if not st or not st.get("chambers"):
+            continue
+        ts = now_iso()
+        docs = [{"chamber": ch["id"], "name": ch["name"], "temp": ch["temp"],
+                 "humidity": ch["humidity"], "co2": ch["co2"], "ts": ts}
+                for ch in st["chambers"]]
+        try:
+            await db.plc_history.insert_many(docs)
+        except Exception as e:
+            logger.warning("history insert failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
+    await load_thresholds()
+    try:
+        await db.plc_history.create_index("ts")
+    except Exception:
+        pass
     gateway.start(loop)
     simulator.start()
+    sampler = asyncio.create_task(history_sampler())
     yield
+    sampler.cancel()
     simulator.stop()
     gateway.stop()
     client.close()
@@ -346,9 +414,14 @@ api = APIRouter(prefix="/api")
 
 
 class CommandIn(BaseModel):
-    type: str = Field(pattern=r"^(set_setpoint|chamber_power|defrost)$")
+    type: str = Field(pattern=r"^(set_setpoint|chamber_power)$")
     chamber: int
     value: Any = None
+
+
+class ThresholdIn(BaseModel):
+    temp_max: float
+    co2_max: float
 
 
 @api.get("/")
@@ -401,10 +474,8 @@ async def device_command(device_id: str, cmd: CommandIn):
     name = f"Komora {cmd.chamber + 1}"
     if cmd.type == "set_setpoint":
         msg = f"{name}: nastawa = {cmd.value}°C"
-    elif cmd.type == "chamber_power":
-        msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
     else:
-        msg = f"{name}: rozmrażanie {'ON' if cmd.value else 'OFF'}"
+        msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
     gateway.log_event_sync("command", msg, body)
     return {"queued": True, "request_id": body["request_id"]}
 
@@ -420,6 +491,40 @@ async def simulator_toggle(enable: bool = True):
     simulator.enabled = enable
     gateway.log_event_sync("info", f"Symulator {'włączony' if enable else 'wyłączony'}", {})
     return {"simulator_enabled": simulator.enabled}
+
+
+@api.get("/thresholds")
+async def get_thresholds():
+    return {"thresholds": [{"chamber": k, **v} for k, v in sorted(THRESHOLDS.items())]}
+
+
+@api.put("/thresholds/{chamber}")
+async def set_threshold(chamber: int, body: ThresholdIn):
+    if chamber not in DEFAULT_THRESHOLDS:
+        raise HTTPException(404, "unknown chamber")
+    THRESHOLDS[chamber] = {"temp_max": body.temp_max, "co2_max": body.co2_max}
+    await db.chamber_thresholds.update_one(
+        {"chamber": chamber},
+        {"$set": {"chamber": chamber, "temp_max": body.temp_max, "co2_max": body.co2_max}},
+        upsert=True,
+    )
+    gateway.log_event_sync(
+        "info", f"Komora {chamber + 1}: progi temp ≤ {body.temp_max}°C, CO₂ ≤ {int(body.co2_max)} ppm", {})
+    # re-evaluate current state against new thresholds immediately
+    if gateway.latest_state:
+        gateway.annotate(gateway.latest_state)
+    return {"ok": True, "thresholds": THRESHOLDS[chamber]}
+
+
+@api.get("/history")
+async def history(hours: int = 3):
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    docs = await db.plc_history.find(
+        {"ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1).to_list(6000)
+    out: dict = {}
+    for d in docs:
+        out.setdefault(str(d["chamber"]), []).append(d)
+    return {"history": out}
 
 
 @app.websocket("/api/ws")
