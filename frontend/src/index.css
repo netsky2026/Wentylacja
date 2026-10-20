@@ -31,7 +31,7 @@
   --accent: #D92D20; --green: #15803D;
   --surface: #F0F3F0; --surface2: #DFE6E0; --grid: #E3E7E4; --axis: #6B7280; --off: #c4c9c5; --frame: #7d858c;
   --nav-bg: rgba(255,255,255,0.92); --glass: linear-gradient(160deg, #cfe3ef 0%, #b9d3e3 100%); --thumb: #c9d0ca;
-  --warn-text: #8a6a2a; --c-power: #b07d1e; --c-water: #2f6f93; --c-co2: #8a6b2f; --c-cl: #4b5f7a; --c-cr: #3d6b52; --c-chim: #4b5563;
+  --warn-text: #7a5c20; --c-power: #b07d1e; --c-water: #2f6f93; --c-co2: #8a6b2f; --c-cl: #4b5f7a; --c-cr: #3d6b52; --c-chim: #4b5563;
   color-scheme: light;
 }
 

@@ -34,7 +34,7 @@ export default function App() {
 }
 
 function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
-  const [brand, setBrand] = useState({ client_id: null, app_name: null, theme: "green", logo_version: null });
+  const [brand, setBrand] = useState({ client_id: null, app_name: null, theme: null, logo_version: null, loaded: false });
   const canControl = ["operator", "admin", "superadmin"].includes(user.role);
   const [view, setView] = useState("chambers");
   const [devices, setDevices] = useState(null);
@@ -114,16 +114,17 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
   const loadBrand = useCallback(() => {
     if (user.role === "superadmin" && !brandClient) return;
     const q = user.role === "superadmin" && brandClient ? `?client_id=${brandClient}` : "";
-    axios.get(`${API}/branding${q}`).then(({ data }) => setBrand(data)).catch(() => {});
+    axios.get(`${API}/branding${q}`).then(({ data }) => setBrand({ ...data, loaded: true })).catch(() => {});
   }, [user.role, brandClient]);
   useEffect(() => { loadBrand(); }, [loadBrand]);
-  const theme = user.theme || brand.theme || "green";
+  const theme = user.theme || brand.theme || (brand.loaded ? "green" : localStorage.getItem("theme") || "green");
   useEffect(() => {
+    if (!user.theme && !brand.loaded) return;
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
     const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg);
-  }, [theme]);
+  }, [theme, user.theme, brand.loaded]);
 
   const devRef = useRef(devId);
   devRef.current = devId;

@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend-only retest of the iteration_12 fixes at 390x844, all 4 themes, superadmin on kowalski-a. PASS: light-theme warn text (RĘCZNY badge #8a6a2a, contrast 4.5:1 on the surface background; mocked-alarm banner 5.03:1 on white; heating uses var(--warn-text), confirmed in code, but heating was OFF during the test so the ON state was not seen). Dark themes still use #c9a46a (about 8:1). PASS: Dane charts in light theme use the theme vars (humidity #2f6f93, CO2 #8a6b2f, curtains #4b5f7a/#3d6b52, chimney #4b5563, plant/daily power #b07d1e, water #2f6f93), all clearly visible. The dark themes keep the original colours. PASS: green theme surfaces are solid (sensor/reg-cell #0d0d0d, nav rgba(14,14,14,0.86), inputs solid in screenshots). PASS: no horizontal overflow on Komory/Dane/Ustawienia in all 4 themes (scrollWidth=390). PASS (partly): /api/branding is now called only once, with ?client_id, after /devices. FAIL: the green->amber flash still happens. Sampling data-theme every 5ms over 3 reloads gave amber (from localStorage) -> green for about 0.9-1.9s -> amber. Without a saved theme it was green for about 1.6s before amber.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App.js Dashboard theme effect", "issue": "Superadmin initial load still flashes green before the client theme (amber). The branding request order was fixed, but the initial brand state is {theme:'green'} (App.js:37) and theme = user.theme || brand.theme || 'green' (App.js:120). The theme effect therefore writes data-theme='green' on mount, overwriting the amber that was pre-applied from localStorage on line 13, and amber only comes back once /branding resolves.", "selector": "html[data-theme]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Light theme Komory", "issues": ["RĘCZNY badge contrast is exactly 4.5:1 on --surface (#F0F3F0). It passes AA but only just; a slightly darker --warn-text (e.g. #7a5c20) would give some margin."]}
+    ]
+  },
+  "test_report_links": ["/app/tests/it13_theme_check.py"],
+  "action_items": [
+    "Fix the initial theme flash: start brand.theme from localStorage.getItem('theme') (or null), and in the theme effect skip writing data-theme while brand hasn't loaded (e.g. brand.client_id null for superadmin with no device yet), so the localStorage theme stays in place until /branding resolves"
+  ],
+  "critical_code_review_comments": [
+    "App.js:37 hardcodes initial brand theme 'green', which defeats the localStorage pre-apply on App.js:13",
+    "blue/amber theme blocks don't define --warn-text/--c-*; they inherit from :root (green values). Intended, but implicit."
+  ],
+  "updated_files": ["/app/tests/it13_theme_check.py"],
+  "success_rate": {"backend": "skipped", "frontend": "4/5 retest items pass (theme flash not fixed)"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026",
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "State restored: superadmin theme=null (playwright page.request.put with {'theme': None} did NOT reset it; use python requests json={'theme':None}). All kowalski-a/chlodnia-01 chambers are in auto mode. Kowalski branding is unchanged (Kowalski Wentylacja, amber, logo 985bf926). Flash detection: add_init_script that polls documentElement data-theme every 5ms; MutationObserver did not record anything.",
+  "rca of the issue": "Repro: log in as superadmin, set localStorage device=kowalski-a, reload. data-theme goes amber -> green -> amber. Cause: the Dashboard theme effect runs with the default brand {theme:'green'} before /branding?client_id resolves. Fix: initialise from the stored theme or skip the effect until brand is loaded."
+}

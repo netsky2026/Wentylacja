@@ -80,3 +80,9 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Roles: superadmin (manages clients/devices/broker), client admin (own users + alarm recipients), operator, viewer. WS broadcasts filtered by client.
 - Simulator per device (simulated flag). Legacy data migrated to client "Marco Polo"/device chlodnia-01.
 - API now device-scoped: /api/devices, /api/devices/{id}/command|thresholds|history|history/csv|usage/daily, /api/events?device_id, /api/alarm-settings?client_id, /api/clients.
+
+## 2026-06 Update 8 (Themes & client branding)
+- 4 themes via CSS vars on html[data-theme]: green (default), light (sunlight), blue, amber. Effective = user.theme || client.theme || green.
+- Client branding (superadmin, Fleet card → palette): display_name, default theme, logo (Emergent Object Storage, resized 256px PNG; GET /api/clients/{id}/logo auth-scoped). /api/branding, PUT /api/auth/preferences.
+- Tested iteration_12/13. Note: storage has no delete API → replaced logos are orphaned (tiny).
+- VPS note: object storage uses EMERGENT_LLM_KEY; on own VPS swap to local disk/S3.
