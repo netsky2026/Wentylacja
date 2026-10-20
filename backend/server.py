@@ -11,7 +11,8 @@ publishes chamber state and consumes commands. The backend owns a separate MQTT 
 that subscribes to state and publishes user commands, so the whole round-trip travels
 through the public broker just like a real Fatek controller.
 """
-from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -25,6 +26,10 @@ import threading
 import random
 import uuid
 import copy
+import math
+import socket
+import ipaddress
+from cryptography.fernet import Fernet, InvalidToken
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -36,6 +41,9 @@ from pydantic import BaseModel, Field
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+import auth  # noqa: E402
+from auth import require  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -273,6 +281,40 @@ class PiggerySimulator:
 # ============================================================
 # Backend gateway MQTT client (subscriber + commander)
 # ============================================================
+NUM_FIELDS = ("temp", "setpoint", "humidity", "co2", "curtain_left", "curtain_right", "chimney")
+VENT_FIELDS = ("curtain_left", "curtain_right", "chimney")
+PLANT_FIELDS = ("power_kw", "power_kwh", "water_lpm", "water_total_l")
+
+
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def sanitize_state(p) -> Optional[dict]:
+    """Accept only well-formed numeric PLC state; anything else from the broker is dropped."""
+    if not isinstance(p, dict) or not isinstance(p.get("chambers"), list):
+        return None
+    chambers = []
+    for ch in p["chambers"][:len(DEFAULT_THRESHOLDS)]:
+        if not isinstance(ch, dict) or not _num(ch.get("id")) or int(ch["id"]) not in DEFAULT_THRESHOLDS:
+            return None
+        cid = int(ch["id"])
+        out = {"id": cid, "name": f"Komora {cid + 1}", "on": bool(ch.get("on")), "heating": bool(ch.get("heating")),
+               "mode": "manual" if ch.get("mode") == "manual" else "auto"}
+        for k in NUM_FIELDS:
+            if not _num(ch.get(k)):
+                return None
+            out[k] = float(ch[k])
+        man = ch.get("manual")
+        if isinstance(man, dict):
+            out["manual"] = {k: float(man[k]) for k in VENT_FIELDS if _num(man.get(k))}
+        chambers.append(out)
+    plant_in = p.get("plant") if isinstance(p.get("plant"), dict) else {}
+    plant = {k: float(plant_in[k]) for k in PLANT_FIELDS if _num(plant_in.get(k))}
+    return {"device_id": DEVICE_ID, "model": str(p.get("model", ""))[:64], "chambers": chambers,
+            "plant": plant, "ts": now_iso()}
+
+
 class Gateway:
     def __init__(self):
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -301,7 +343,7 @@ class Gateway:
     def _on_connect(self, c, u, flags, rc, props):
         self.connected = True
         logger.info("GATEWAY connected rc=%s", rc)
-        c.subscribe(f"{MQTT_PREFIX}/+/state", qos=1)
+        c.subscribe(state_topic(DEVICE_ID), qos=1)
         self._schedule_event("info", "Połączono z brokerem MQTT", {"host": MQTT_HOST})
 
     def _on_disconnect(self, c, u, flags, rc, props):
@@ -310,9 +352,13 @@ class Gateway:
         self._schedule_event("warning", "Rozłączono z brokerem MQTT", {})
 
     def _on_message(self, c, u, msg):
+        if msg.topic != state_topic(DEVICE_ID):
+            return
         try:
-            payload = json.loads(msg.payload.decode())
+            payload = sanitize_state(json.loads(msg.payload.decode()))
         except Exception:
+            return
+        if payload is None:
             return
         prev = self.latest_state
         self.annotate(payload)
@@ -428,10 +474,43 @@ def set_broker_globals(cfg: dict):
     DEVICE_ID = cfg["device_id"]
 
 
+FERNET = Fernet(os.environ["BROKER_SECRET"].encode())
+
+
+def encrypt_secret(v: str) -> str:
+    return FERNET.encrypt(v.encode()).decode() if v else ""
+
+
+def decrypt_secret(v: str) -> str:
+    try:
+        return FERNET.decrypt(v.encode()).decode() if v else ""
+    except InvalidToken:
+        logger.warning("broker password could not be decrypted")
+        return ""
+
+
 async def load_broker():
     doc = await db.broker_config.find_one({"_id": "main"})
-    if doc:
-        set_broker_globals(doc)
+    if not doc:
+        return
+    if "password" in doc:  # migrate legacy plaintext
+        doc["password_enc"] = encrypt_secret(doc.pop("password") or "")
+        await db.broker_config.update_one({"_id": "main"}, {"$set": {"password_enc": doc["password_enc"]},
+                                                           "$unset": {"password": ""}})
+    doc["password"] = decrypt_secret(doc.get("password_enc", ""))
+    set_broker_globals(doc)
+
+
+def is_public_host(host: str, port: int) -> bool:
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global or ip.is_multicast:
+            return False
+    return bool(infos)
 
 
 async def history_sampler():
@@ -460,6 +539,8 @@ async def history_sampler():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
+    auth.init(db)
+    await auth.setup()
     await load_thresholds()
     await load_broker()
     try:
@@ -506,7 +587,7 @@ async def root():
     return {"message": "Fatek MQTT piggery gateway"}
 
 
-@api.get("/config")
+@api.get("/config", dependencies=[Depends(require("viewer"))])
 async def get_config():
     return {
         "broker_host": MQTT_HOST,
@@ -522,7 +603,7 @@ async def get_config():
     }
 
 
-@api.get("/health")
+@api.get("/health", dependencies=[Depends(require("viewer"))])
 async def health():
     return {
         "ok": True,
@@ -532,7 +613,7 @@ async def health():
     }
 
 
-@api.get("/device/{device_id}/state")
+@api.get("/device/{device_id}/state", dependencies=[Depends(require("viewer"))])
 async def device_state(device_id: str):
     if gateway.latest_state:
         return {"online": gateway.is_online(), "state": gateway.latest_state}
@@ -543,7 +624,7 @@ async def device_state(device_id: str):
     return {"online": gateway.is_online(), "state": doc.get("payload")}
 
 
-@api.post("/device/{device_id}/command")
+@api.post("/device/{device_id}/command", dependencies=[Depends(require("operator"))])
 async def device_command(device_id: str, cmd: CommandIn):
     if "/" in device_id or len(device_id) > 64:
         raise HTTPException(400, "invalid device_id")
@@ -576,25 +657,25 @@ async def device_command(device_id: str, cmd: CommandIn):
     return {"queued": True, "request_id": body["request_id"]}
 
 
-@api.get("/events")
+@api.get("/events", dependencies=[Depends(require("viewer"))])
 async def events(limit: int = 100):
     docs = await db.plc_events.find({}, {"_id": 0}).sort("ts", -1).to_list(limit)
     return {"events": docs}
 
 
-@api.post("/simulator/toggle")
+@api.post("/simulator/toggle", dependencies=[Depends(require("admin"))])
 async def simulator_toggle(enable: bool = True):
     simulator.enabled = enable
     gateway.log_event_sync("info", f"Symulator {'włączony' if enable else 'wyłączony'}", {})
     return {"simulator_enabled": simulator.enabled}
 
 
-@api.get("/thresholds")
+@api.get("/thresholds", dependencies=[Depends(require("viewer"))])
 async def get_thresholds():
     return {"thresholds": [{"chamber": k, **v} for k, v in sorted(THRESHOLDS.items())]}
 
 
-@api.put("/thresholds/{chamber}")
+@api.put("/thresholds/{chamber}", dependencies=[Depends(require("operator"))])
 async def set_threshold(chamber: int, body: ThresholdIn):
     if chamber not in DEFAULT_THRESHOLDS:
         raise HTTPException(404, "unknown chamber")
@@ -614,7 +695,7 @@ async def set_threshold(chamber: int, body: ThresholdIn):
     return {"ok": True, "thresholds": THRESHOLDS[chamber]}
 
 
-@api.get("/history")
+@api.get("/history", dependencies=[Depends(require("viewer"))])
 async def history(hours: int = 3):
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     docs = await db.plc_history.find(
@@ -627,12 +708,16 @@ async def history(hours: int = 3):
     return {"history": out, "plant": plant}
 
 
-@api.put("/broker")
+@api.put("/broker", dependencies=[Depends(require("admin"))])
 async def set_broker(body: BrokerIn):
     cfg = body.model_dump()
+    if not await asyncio.to_thread(is_public_host, cfg["host"], cfg["port"]):
+        raise HTTPException(422, "Broker host must resolve to a public address")
     if cfg["password"] is None:
         cfg["password"] = MQTT_PASS
-    await db.broker_config.update_one({"_id": "main"}, {"$set": cfg}, upsert=True)
+    stored = {k: v for k, v in cfg.items() if k != "password"}
+    stored["password_enc"] = encrypt_secret(cfg["password"])
+    await db.broker_config.update_one({"_id": "main"}, {"$set": stored, "$unset": {"password": ""}}, upsert=True)
     await asyncio.to_thread(gateway.mqtt_stop)
     await asyncio.to_thread(simulator.mqtt_stop)
     set_broker_globals(cfg)
@@ -644,7 +729,7 @@ async def set_broker(body: BrokerIn):
     return await get_config()
 
 
-@api.get("/usage/daily")
+@api.get("/usage/daily", dependencies=[Depends(require("viewer"))])
 async def usage_daily(days: int = 7):
     days = max(1, min(60, days))
     start = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date()
@@ -663,7 +748,7 @@ async def usage_daily(days: int = 7):
     return {"days": out}
 
 
-@api.get("/history/csv")
+@api.get("/history/csv", dependencies=[Depends(require("viewer"))])
 async def history_csv(chamber: int, hours: int = 24):
     if chamber not in DEFAULT_THRESHOLDS:
         raise HTTPException(404, "unknown chamber")
@@ -672,7 +757,12 @@ async def history_csv(chamber: int, hours: int = 24):
     cursor = db.plc_history.find({"chamber": chamber, "ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1)
 
     def fmt(v):
-        return "" if v is None else str(v).replace(".", ",")
+        if v is None:
+            return ""
+        if not _num(v):
+            v = "'" + str(v) if str(v)[:1] in ("=", "+", "-", "@", "\t", "\r") else str(v)
+            return v.replace(";", " ")
+        return str(v).replace(".", ",")
 
     async def gen():
         yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_zamkn_%;kurtyna_P_zamkn_%;komin_otw_%\n"
@@ -690,6 +780,11 @@ async def history_csv(chamber: int, hours: int = 24):
 
 @app.websocket("/api/ws")
 async def websocket_endpoint(ws: WebSocket):
+    origin = ws.headers.get("origin")
+    user = await auth.user_from_token(ws.cookies.get("access_token"))
+    if not user or not origin_allowed(origin, ws.headers.get("host")):
+        await ws.close(code=4401)
+        return
     await ws.accept()
     gateway.ws_clients.add(ws)
     if gateway.latest_state:
@@ -704,11 +799,30 @@ async def websocket_endpoint(ws: WebSocket):
         gateway.ws_clients.discard(ws)
 
 
+FRONTEND_URL = os.environ["FRONTEND_URL"].rstrip("/")
+
+
+def origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
+    if not origin:
+        return True
+    origin = origin.rstrip("/")
+    return origin == FRONTEND_URL or (bool(host) and origin.split("://", 1)[-1] == host)
+
+
+@app.middleware("http")
+async def origin_guard(request: Request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        if not origin_allowed(request.headers.get("origin"), request.headers.get("host")):
+            return JSONResponse({"detail": "Forbidden origin"}, status_code=403)
+    return await call_next(request)
+
+
+app.include_router(auth.router)
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=[FRONTEND_URL],
     allow_methods=["*"],
     allow_headers=["*"],
 )

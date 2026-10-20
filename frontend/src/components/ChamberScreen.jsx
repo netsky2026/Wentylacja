@@ -11,7 +11,7 @@ const Sensor = ({ icon, label, value, unit, warn, testid }) => (
   </div>
 );
 
-export const ChamberScreen = ({ ch, t, send }) => (
+export const ChamberScreen = ({ ch, t, send, canControl }) => (
   <div className={`panel panel-pad fade-in ${ch.alarm ? "alarm-card" : ""}`} data-testid={`chamber-${ch.id}-screen`}
     style={{ opacity: ch.on ? 1 : 0.75 }}>
     <div className="flex items-center justify-between mb-3">
@@ -55,9 +55,9 @@ export const ChamberScreen = ({ ch, t, send }) => (
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", marginTop: 8 }}>{t.curtainHint}</div>
     </div>
 
-    <VentControl ch={ch} t={t} send={send} />
+    {canControl && <VentControl ch={ch} t={t} send={send} />}
 
-    <button data-testid={`chamber-${ch.id}-power`} onClick={() => send({ type: "chamber_power", chamber: ch.id, value: !ch.on })}
+    {canControl && <button data-testid={`chamber-${ch.id}-power`} onClick={() => send({ type: "chamber_power", chamber: ch.id, value: !ch.on })}
       className="action-btn" style={{
         width: "100%",
         background: ch.on ? "rgba(255,59,48,0.10)" : "rgba(48,209,88,0.12)",
@@ -65,6 +65,6 @@ export const ChamberScreen = ({ ch, t, send }) => (
         borderColor: ch.on ? "var(--accent)" : "var(--green)",
       }}>
       <Power size={16} /> {ch.on ? t.turnOff : t.turnOn}
-    </button>
+    </button>}
   </div>
 );

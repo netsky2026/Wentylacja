@@ -2,17 +2,38 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
 import { I18N } from "@/i18n";
+import { API, refreshSession, setOnAuthLost } from "@/api";
+import { LoginScreen } from "@/components/LoginScreen";
 import { ChamberScreen } from "@/components/ChamberScreen";
 import { DataView } from "@/components/DataView";
 import { SettingsView } from "@/components/SettingsView";
 import { BottomNav, ChamberSwitch } from "@/components/BottomNav";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
 
 export default function App() {
-  const [lang, setLang] = useState("pl");
+  const [lang, setLang] = useState(() => localStorage.getItem("lang") || "pl");
+  const [user, setUser] = useState(null);
   const t = I18N[lang];
+  const changeLang = (l) => { setLang(l); localStorage.setItem("lang", l); };
+  useEffect(() => {
+    setOnAuthLost(() => setUser(false));
+    axios.get(`${API}/auth/me`).then(({ data }) => setUser(data))
+      .catch(() => refreshSession().then(({ data }) => setUser(data)).catch(() => setUser(false)));
+  }, []);
+  const logout = async () => {
+    try { await axios.post(`${API}/auth/logout`); } catch (e) { /* noop */ }
+    setUser(false);
+  };
+  if (user === null) return <div className="app-shell" data-testid="auth-loading" />;
+  if (user === false) {
+    return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} /><Toaster theme="dark" position="top-center" /></>;
+  }
+  return <Dashboard t={t} lang={lang} setLang={changeLang} user={user} onLogout={logout} />;
+}
+
+function Dashboard({ t, lang, setLang, user, onLogout }) {
+  const canControl = user.role === "operator" || user.role === "admin";
   const [view, setView] = useState("chambers");
   const [selected, setSelected] = useState(0);
   const [state, setState] = useState(null);
@@ -79,7 +100,10 @@ export default function App() {
       if (stop) return;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
-      ws.onclose = () => { if (!stop) setTimeout(connect, 2000); };
+      ws.onclose = () => {
+        if (stop) return;
+        refreshSession().catch(() => {}).finally(() => setTimeout(connect, 2000));
+      };
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === "state") { setState(msg.payload); setOnline(true); }
@@ -142,12 +166,13 @@ export default function App() {
         {chambers.length === 0 ? (
           <div className="panel panel-pad" style={{ color: "var(--muted)", textAlign: "center" }}>…</div>
         ) : view === "chambers" ? (
-          ch && <ChamberScreen key={ch.id} ch={ch} t={t} send={send} />
+          ch && <ChamberScreen key={ch.id} ch={ch} t={t} send={send} canControl={canControl} />
         ) : view === "data" ? (
           <DataView t={t} ch={ch} plant={state?.plant} history={history} plantHistory={plantHistory} events={events} />
         ) : (
           <SettingsView t={t} chambers={chambers} thresholds={thresholds} send={send} saveThreshold={saveThreshold}
-            notifPerm={notifPerm} requestNotif={requestNotif} simOn={simOn} toggleSim={toggleSim} config={config} onConfigSaved={setConfig} />
+            notifPerm={notifPerm} requestNotif={requestNotif} simOn={simOn} toggleSim={toggleSim} config={config} onConfigSaved={setConfig}
+            user={user} onLogout={onLogout} canControl={canControl} />
         )}
       </div>
       <BottomNav view={view} setView={setView} t={t} />

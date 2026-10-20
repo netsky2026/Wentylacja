@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { BrokerForm } from "@/components/BrokerForm";
 import { InstallCard } from "@/components/InstallCard";
+import { AccountCard, UsersCard } from "@/components/AccountCards";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
@@ -53,13 +54,16 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
 };
 
 
-export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, simOn, toggleSim, config, onConfigSaved }) => (
+export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, simOn, toggleSim, config, onConfigSaved, user, onLogout, canControl }) => (
   <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="settings-view">
-    <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint}</div>
-    {chambers.map((ch) => (
-      <ChamberSettings key={ch.id} ch={ch} t={t} send={send} saveThreshold={saveThreshold}
-        th={thresholds.find((x) => x.chamber === ch.id)} />
-    ))}
+    <AccountCard t={t} user={user} onLogout={onLogout} />
+    {canControl && <>
+      <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint}</div>
+      {chambers.map((ch) => (
+        <ChamberSettings key={ch.id} ch={ch} t={t} send={send} saveThreshold={saveThreshold}
+          th={thresholds.find((x) => x.chamber === ch.id)} />
+      ))}
+    </>}
 
     <div className="panel flex items-center justify-between" style={{ padding: "12px 16px" }}>
       <span className="flex items-center gap-2" style={{ fontSize: 13 }}>
@@ -71,6 +75,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
         : <button data-testid="notif-enable" className="action-btn" onClick={requestNotif} style={{ padding: "6px 12px", fontSize: 12 }}>{t.enableNotif}</button>}
     </div>
 
+    {user.role === "admin" && <>
     <div className="panel flex items-center justify-between" style={{ padding: "12px 16px" }}>
       <span style={{ fontSize: 13 }}>{t.simulator}</span>
       <button data-testid="sim-toggle" onClick={toggleSim} className="font-head"
@@ -82,6 +87,8 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
     </div>
 
     <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
+    <UsersCard t={t} me={user} />
+    </>}
     <InstallCard t={t} />
   </div>
 );
