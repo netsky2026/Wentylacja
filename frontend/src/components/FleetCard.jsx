@@ -1,8 +1,53 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Building2, Cpu, Plus, Trash2, KeyRound, Copy } from "lucide-react";
+import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload } from "lucide-react";
 import { API, formatApiError } from "@/api";
+import { ThemeSelect } from "@/components/AccountCards";
+
+const BrandEditor = ({ c, t, onChanged }) => {
+  const [name, setName] = useState(c.display_name || "");
+  const patch = async (body) => {
+    try { await axios.patch(`${API}/clients/${c.id}`, body); onChanged(); toast.success(t.saved); } catch (e) { toast.error(t.saveFailed); }
+  };
+  const upload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 1_000_000) { toast.error(t.logoInvalid); return; }
+    const fd = new FormData();
+    fd.append("file", file);
+    try { await axios.post(`${API}/clients/${c.id}/logo`, fd); onChanged(); toast.success(t.saved); } catch (err) { toast.error(t.logoInvalid); }
+  };
+  const removeLogo = async () => { try { await axios.delete(`${API}/clients/${c.id}/logo`); onChanged(); } catch (e) { toast.error(t.saveFailed); } };
+  return (
+    <div className="fade-in" data-testid={`brand-editor-${c.id}`} style={{ borderTop: "1px solid var(--border)", marginTop: 8, paddingTop: 8,
+      display: "flex", flexDirection: "column", gap: 8 }}>
+      <label className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)" }}>{t.displayName}
+        <div className="grid gap-2" style={{ gridTemplateColumns: "1fr auto" }}>
+          <input className="num-input" style={{ fontSize: 13 }} value={name} maxLength={40} onChange={(e) => setName(e.target.value)} data-testid={`brand-name-${c.id}`} />
+          <button className="action-btn" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => patch({ display_name: name })} data-testid={`brand-name-save-${c.id}`}>{t.save}</button>
+        </div>
+      </label>
+      <label className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)" }}>{t.colorTheme}
+        <ThemeSelect t={t} value={c.theme} onChange={(theme) => patch({ theme })} testid={`brand-theme-${c.id}`} />
+      </label>
+      <div className="flex items-center gap-2">
+        <div style={{ width: 44, height: 44, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)",
+          display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          <img src={c.logo_version ? `${API}/clients/${c.id}/logo?v=${c.logo_version}` : "/icon-192.png"} alt=""
+            data-testid={`brand-logo-preview-${c.id}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+        </div>
+        <label className="action-btn" style={{ padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
+          <Upload size={13} /> {t.uploadLogo}
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} style={{ display: "none" }} data-testid={`brand-logo-input-${c.id}`} />
+        </label>
+        {c.logo_version && <button className="sp-btn" onClick={removeLogo} data-testid={`brand-logo-remove-${c.id}`} aria-label={t.removeLogo}><Trash2 size={13} /></button>}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--muted)" }}>{t.logoHint}</div>
+    </div>
+  );
+};
 
 const Creds = ({ c, t, onClose }) => {
   const text = `Broker: ${c.broker_host}:${c.broker_port}${c.tls ? " (TLS)" : ""}\nLogin: ${c.mqtt_username}\n${t.password}: ${c.mqtt_password}\nState: ${c.state_topic}\nCommand: ${c.command_topic}`;
@@ -25,6 +70,7 @@ export const FleetCard = ({ t, reloadDevices }) => {
   const [clientName, setClientName] = useState("");
   const [f, setF] = useState({ client_id: "", name: "", device_id: "", chambers: 3, simulated: false });
   const [creds, setCreds] = useState(null);
+  const [brandOpen, setBrandOpen] = useState(null);
   const load = useCallback(async () => {
     try {
       const [c, d] = await Promise.all([axios.get(`${API}/clients`), axios.get(`${API}/devices`)]);
@@ -68,14 +114,19 @@ export const FleetCard = ({ t, reloadDevices }) => {
         <div key={c.id} className="reg-cell" style={{ marginBottom: 8, padding: "8px 10px" }} data-testid={`client-${c.id}`}>
           <div className="flex items-center justify-between">
             <span className="font-head" style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
-            <button className="sp-btn" onClick={() => delClient(c)} data-testid={`client-delete-${c.id}`} aria-label="delete"><Trash2 size={13} /></button>
+            <div className="flex gap-1">
+              <button className="sp-btn" onClick={() => setBrandOpen(brandOpen === c.id ? null : c.id)} data-testid={`client-brand-${c.id}`}
+                aria-label={t.branding} style={{ color: brandOpen === c.id ? "var(--primary)" : undefined }}><Palette size={13} /></button>
+              <button className="sp-btn" onClick={() => delClient(c)} data-testid={`client-delete-${c.id}`} aria-label="delete"><Trash2 size={13} /></button>
+            </div>
           </div>
+          {brandOpen === c.id && <BrandEditor c={c} t={t} onChanged={refresh} />}
           {devices.filter((d) => d.client_id === c.id).map((d) => (
             <div key={d.device_id} className="flex items-center justify-between" style={{ padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 6 }}
               data-testid={`fleet-device-${d.device_id}`}>
               <div style={{ minWidth: 0 }}>
                 <div className="flex items-center gap-1" style={{ fontSize: 12 }}><Cpu size={12} /> {d.name}
-                  <span className={`led ${d.online ? "ok" : ""}`} style={{ marginLeft: 4, ...(d.online ? {} : { background: "#444" }) }} /></div>
+                  <span className={`led ${d.online ? "ok" : ""}`} style={{ marginLeft: 4, ...(d.online ? {} : { background: "var(--off)" }) }} /></div>
                 <div style={{ fontSize: 10, color: "var(--muted)" }}>{d.device_id} · {d.chambers} {t.chambersShort}{d.simulated ? ` · ${t.simulator}` : ""}</div>
               </div>
               <div className="flex gap-1">

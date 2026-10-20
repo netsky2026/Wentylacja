@@ -6,7 +6,20 @@ import { API, formatApiError } from "@/api";
 
 const ROLE_KEYS = { viewer: "roleViewer", operator: "roleOperator", admin: "roleAdmin", superadmin: "roleSuperadmin" };
 
-export const AccountCard = ({ t, user, onLogout }) => {
+export const THEMES = ["green", "light", "blue", "amber"];
+
+export const ThemeSelect = ({ t, value, onChange, withDefault, testid, defaultLabel }) => (
+  <select className="num-input" style={{ fontSize: 13 }} value={value || ""} onChange={(e) => onChange(e.target.value || null)} data-testid={testid}>
+    {withDefault && <option value="">{defaultLabel}</option>}
+    {THEMES.map((k) => <option key={k} value={k}>{t[`theme_${k}`]}</option>)}
+  </select>
+);
+
+export const AccountCard = ({ t, user, onLogout, onUserChange, clientTheme }) => {
+  const setTheme = async (theme) => {
+    try { const { data } = await axios.put(`${API}/auth/preferences`, { theme }); onUserChange(data); }
+    catch (e) { toast.error(t.saveFailed); }
+  };
   const [cur, setCur] = useState("");
   const [nw, setNw] = useState("");
   const change = async () => {
@@ -28,6 +41,10 @@ export const AccountCard = ({ t, user, onLogout }) => {
           <LogOut size={14} /> {t.logout}
         </button>
       </div>
+      <label className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>{t.colorTheme}
+        <ThemeSelect t={t} value={user.theme} onChange={setTheme} withDefault testid="theme-select"
+          defaultLabel={`${t.themeDefault} (${t[`theme_${clientTheme || "green"}`]})`} />
+      </label>
       <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <input className="num-input" style={{ fontSize: 13 }} type="password" placeholder={t.currentPassword} value={cur}
           onChange={(e) => setCur(e.target.value)} data-testid="pw-current" autoComplete="current-password" />

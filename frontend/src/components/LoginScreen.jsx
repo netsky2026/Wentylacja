@@ -29,7 +29,7 @@ export const LoginScreen = ({ t, onLogin, lang, setLang }) => {
           <div className="panel flex" style={{ overflow: "hidden" }}>
             {["pl", "en"].map((l) => (
               <button key={l} data-testid={`login-lang-${l}`} onClick={() => setLang(l)} className="font-head"
-                style={{ background: lang === l ? "#2a2f35" : "transparent", color: lang === l ? "var(--text)" : "var(--muted)",
+                style={{ background: lang === l ? "var(--surface2)" : "transparent", color: lang === l ? "var(--text)" : "var(--muted)",
                   border: "none", padding: "7px 11px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>{l.toUpperCase()}</button>
             ))}
           </div>
@@ -47,7 +47,7 @@ export const LoginScreen = ({ t, onLogin, lang, setLang }) => {
           </label>
           {error && <div data-testid="login-error" style={{ color: "var(--accent)", fontSize: 12 }}>{error}</div>}
           <button type="submit" className="action-btn" disabled={busy} data-testid="login-submit"
-            style={{ background: "#34A56A", borderColor: "#34A56A", color: "#0A0A0A", fontWeight: 700 }}>
+            style={{ background: "var(--primary)", borderColor: "var(--primary)", color: "var(--on-primary)", fontWeight: 700 }}>
             <LogIn size={16} /> {busy ? "…" : t.loginBtn}
           </button>
         </form>

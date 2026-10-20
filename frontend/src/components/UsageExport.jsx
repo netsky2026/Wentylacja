@@ -10,11 +10,11 @@ const Bars = ({ data, dataKey, color, unit, testid }) => (
   <div style={{ width: "100%", height: 140 }} data-testid={testid}>
     <ResponsiveContainer>
       <BarChart data={data} margin={{ top: 4, right: 6, left: -18, bottom: 0 }}>
-        <CartesianGrid stroke="#222" vertical={false} />
-        <XAxis dataKey="date" tickFormatter={day} stroke="#666" fontSize={10} />
-        <YAxis stroke="#666" fontSize={10} />
-        <Tooltip labelFormatter={day} formatter={(v) => [`${v} ${unit}`]} cursor={{ fill: "#1a1a1a" }}
-          contentStyle={{ background: "#141414", border: "1px solid #262626", fontSize: 12 }} />
+        <CartesianGrid stroke="var(--grid)" vertical={false} />
+        <XAxis dataKey="date" tickFormatter={day} stroke="var(--axis)" fontSize={10} />
+        <YAxis stroke="var(--axis)" fontSize={10} />
+        <Tooltip labelFormatter={day} formatter={(v) => [`${v} ${unit}`]} cursor={{ fill: "var(--surface2)" }}
+          contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", fontSize: 12 }} />
         <Bar dataKey={dataKey} fill={color} radius={[3, 3, 0, 0]} isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
@@ -50,7 +50,7 @@ export const CsvExport = ({ t, ch, deviceId }) => {
         {opts.map(([h, label]) => (
           <button key={h} data-testid={`csv-range-${h}`} onClick={() => setHours(h)} className="font-head"
             style={{
-              flex: 1, background: hours === h ? "rgba(52,165,106,0.16)" : "transparent", color: hours === h ? "var(--primary)" : "var(--muted)",
+              flex: 1, background: hours === h ? "rgba(var(--primary-rgb),0.16)" : "transparent", color: hours === h ? "var(--primary)" : "var(--muted)",
               border: "1px solid var(--border)", borderRadius: 8, padding: "7px", fontSize: 13, fontWeight: 700, cursor: "pointer",
             }}>{label}</button>
         ))}

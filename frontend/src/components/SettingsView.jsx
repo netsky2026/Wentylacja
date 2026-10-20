@@ -57,12 +57,12 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
 
 
 export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, config, onConfigSaved,
-  user, onLogout, canControl, dev, reloadDevices }) => {
+  user, onLogout, canControl, dev, reloadDevices, onUserChange, clientTheme }) => {
   const isAdmin = user.role === "admin" || user.role === "superadmin";
   const clientId = user.role === "superadmin" ? dev?.client_id : undefined;
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="settings-view">
-      <AccountCard t={t} user={user} onLogout={onLogout} />
+      <AccountCard t={t} user={user} onLogout={onLogout} onUserChange={onUserChange} clientTheme={clientTheme} />
       {canControl && dev && chambers.length > 0 && <>
         <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint} · {dev.client_name} · {dev.name}</div>
         {chambers.map((ch) => (

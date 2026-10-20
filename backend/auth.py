@@ -48,7 +48,7 @@ def _set_cookies(resp: Response, u: dict):
 
 def public_user(u: dict) -> dict:
     return {"id": str(u["_id"]), "email": u["email"], "name": u.get("name", ""), "role": u["role"],
-            "client_id": u.get("client_id")}
+            "client_id": u.get("client_id"), "theme": u.get("theme")}
 
 
 async def user_from_token(token: Optional[str], kind: str = "access") -> Optional[dict]:
@@ -159,6 +159,20 @@ async def change_password(body: PasswordIn, response: Response, user: dict = Dep
 
 def _user_scope(actor: dict) -> dict:
     return {} if actor["role"] == "superadmin" else {"client_id": actor.get("client_id")}
+
+
+THEMES = ("green", "light", "blue", "amber")
+
+
+class PrefsIn(BaseModel):
+    theme: Optional[str] = Field(default=None, pattern=r"^(green|light|blue|amber)$")
+
+
+@router.put("/auth/preferences")
+async def set_preferences(body: PrefsIn, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"theme": body.theme}})
+    user["theme"] = body.theme
+    return public_user(user)
 
 
 @router.get("/users")

@@ -14,10 +14,10 @@ const Chart = ({ title, data, lines, testid, t, domain = ["auto", "auto"] }) => 
       <div style={{ width: "100%", height: 170 }}>
         <ResponsiveContainer>
           <LineChart data={data} margin={{ top: 4, right: 6, left: -18, bottom: 0 }}>
-            <CartesianGrid stroke="#222" vertical={false} />
-            <XAxis dataKey="ts" tickFormatter={fmtTime} stroke="#666" fontSize={10} minTickGap={40} />
-            <YAxis stroke="#666" fontSize={10} domain={domain} allowDataOverflow />
-            <Tooltip labelFormatter={fmtTime} contentStyle={{ background: "#141414", border: "1px solid #262626", fontSize: 12 }} />
+            <CartesianGrid stroke="var(--grid)" vertical={false} />
+            <XAxis dataKey="ts" tickFormatter={fmtTime} stroke="var(--axis)" fontSize={10} minTickGap={40} />
+            <YAxis stroke="var(--axis)" fontSize={10} domain={domain} allowDataOverflow />
+            <Tooltip labelFormatter={fmtTime} contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", fontSize: 12 }} />
             {lines.map(([key, color, name]) => (
               <Line key={key} type="monotone" dataKey={key} name={name} stroke={color} dot={false} strokeWidth={2} isAnimationActive={false} />
             ))}
@@ -64,7 +64,7 @@ const EventLog = ({ t, events }) => {
         <div className="flex gap-1">
           {FILTERS.map(([k, label]) => (
             <button key={k} data-testid={`log-filter-${k}`} onClick={() => setF(k)} className="font-head"
-              style={{ background: f === k ? "rgba(52,165,106,0.16)" : "transparent", color: f === k ? "var(--primary)" : "var(--muted)",
+              style={{ background: f === k ? "rgba(var(--primary-rgb),0.16)" : "transparent", color: f === k ? "var(--primary)" : "var(--muted)",
                 border: `1px solid ${f === k ? "var(--primary)" : "var(--border)"}`, borderRadius: 999, padding: "3px 9px",
                 fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{t[label]}</button>
           ))}
@@ -96,7 +96,7 @@ export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events
       {plant && <PlantTile plant={plant} t={t} />}
       <DailyUsage t={t} deviceId={deviceId} />
       <div className="font-head" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>{t.history} · {t.chamberWord} {(ch?.id ?? 0) + 1} · 3 {t.hours}</div>
-      <Chart t={t} title={t.historyTemp} data={data} lines={[["temp", "#d6dbe0", t.temp]]} testid="chart-temp" />
+      <Chart t={t} title={t.historyTemp} data={data} lines={[["temp", "var(--text)", t.temp]]} testid="chart-temp" />
       <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "#7fa3b8", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
       <Chart t={t} title={t.historyCo2} data={data} lines={[["co2", "#b8a37f", t.co2]]} testid="chart-co2" />
       <Chart t={t} title={t.historyVent} data={data} testid="chart-vent" domain={[0, 100]}

@@ -28,8 +28,8 @@ export const ChimneyGauge = ({ open, label, testid, scale = 1 }) => {
     <div className="flex flex-col items-center" data-testid={testid} style={{ gap: 4 }}>
       <div style={{ position: "relative", width: size, height: size }}>
         <svg width={size} height={size} viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r={r} fill="none" stroke="#262626" strokeWidth="6" />
-          <circle cx="32" cy="32" r={r} fill="none" stroke="#34A56A" strokeWidth="6" strokeLinecap="round"
+          <circle cx="32" cy="32" r={r} fill="none" stroke="var(--border)" strokeWidth="6" />
+          <circle cx="32" cy="32" r={r} fill="none" stroke="var(--primary)" strokeWidth="6" strokeLinecap="round"
             strokeDasharray={c} strokeDashoffset={c * (1 - v / 100)} transform="rotate(-90 32 32)"
             style={{ transition: "stroke-dashoffset 0.6s ease" }} />
         </svg>

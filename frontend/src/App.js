@@ -10,6 +10,7 @@ import { SettingsView } from "@/components/SettingsView";
 import { BottomNav, ChamberSwitch, DevicePicker } from "@/components/BottomNav";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+document.documentElement.dataset.theme = localStorage.getItem("theme") || "green";
 
 export default function App() {
   const [lang, setLang] = useState(() => localStorage.getItem("lang") || "pl");
@@ -29,10 +30,11 @@ export default function App() {
   if (user === false) {
     return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} /><Toaster theme="dark" position="top-center" /></>;
   }
-  return <Dashboard t={t} lang={lang} setLang={changeLang} user={user} onLogout={logout} />;
+  return <Dashboard t={t} lang={lang} setLang={changeLang} user={user} onLogout={logout} onUserChange={setUser} />;
 }
 
-function Dashboard({ t, lang, setLang, user, onLogout }) {
+function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
+  const [brand, setBrand] = useState({ client_id: null, app_name: null, theme: "green", logo_version: null });
   const canControl = ["operator", "admin", "superadmin"].includes(user.role);
   const [view, setView] = useState("chambers");
   const [devices, setDevices] = useState(null);
@@ -108,6 +110,20 @@ function Dashboard({ t, lang, setLang, user, onLogout }) {
     return () => clearInterval(hh);
   }, [devId, loadHistory, loadThresholds]);
 
+  const brandClient = user.role === "superadmin" ? dev?.client_id : user.client_id;
+  const loadBrand = useCallback(() => {
+    const q = user.role === "superadmin" && brandClient ? `?client_id=${brandClient}` : "";
+    axios.get(`${API}/branding${q}`).then(({ data }) => setBrand(data)).catch(() => {});
+  }, [user.role, brandClient]);
+  useEffect(() => { loadBrand(); }, [loadBrand]);
+  const theme = user.theme || brand.theme || "green";
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg);
+  }, [theme]);
+
   const devRef = useRef(devId);
   devRef.current = devId;
   useEffect(() => {
@@ -152,14 +168,16 @@ function Dashboard({ t, lang, setLang, user, onLogout }) {
       <div className="mobile-wrap">
         <header className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-            <img src="/icon-192.png" alt="" data-testid="app-logo" style={{ width: 28, height: 28, borderRadius: 7 }} />
-            <span className="font-head" data-testid="app-title" style={{ fontSize: 20, fontWeight: 700, whiteSpace: "nowrap" }}>{t.appName}</span>
+            <img src={brand.logo_version ? `${API}/clients/${brand.client_id}/logo?v=${brand.logo_version}` : "/icon-192.png"}
+              alt="" data-testid="app-logo" style={{ width: 28, height: 28, borderRadius: 7, objectFit: "contain" }} />
+            <span className="font-head" data-testid="app-title" style={{ fontSize: 20, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {brand.app_name || t.appName}</span>
           </div>
           <div className="panel flex" style={{ overflow: "hidden", flexShrink: 0 }}>
             {["pl", "en"].map((l) => (
               <button key={l} data-testid={`lang-${l}`} onClick={() => setLang(l)} className="font-head"
                 style={{
-                  background: lang === l ? "rgba(52,165,106,0.16)" : "transparent", color: lang === l ? "var(--primary)" : "var(--muted)",
+                  background: lang === l ? "rgba(var(--primary-rgb),0.16)" : "transparent", color: lang === l ? "var(--primary)" : "var(--muted)",
                   border: "none", padding: "7px 11px", cursor: "pointer", fontSize: 13, fontWeight: 700,
                 }}>{l.toUpperCase()}</button>
             ))}
@@ -190,7 +208,8 @@ function Dashboard({ t, lang, setLang, user, onLogout }) {
         ) : view === "settings" ? (
           <SettingsView t={t} chambers={chambers} thresholds={thresholds} send={send} saveThreshold={saveThreshold}
             notifPerm={notifPerm} requestNotif={requestNotif} config={config} onConfigSaved={setConfig}
-            user={user} onLogout={onLogout} canControl={canControl} dev={dev} reloadDevices={loadDevices} />
+            user={user} onLogout={onLogout} canControl={canControl} dev={dev} reloadDevices={() => { loadDevices(); loadBrand(); }}
+            onUserChange={onUserChange} clientTheme={brand.theme} />
         ) : chambers.length === 0 ? (
           <div className="panel panel-pad" style={{ color: "var(--muted)", textAlign: "center", fontSize: 13 }}>{dev ? t.waitingData : "…"}</div>
         ) : view === "chambers" ? (
@@ -200,7 +219,7 @@ function Dashboard({ t, lang, setLang, user, onLogout }) {
         )}
       </div>
       <BottomNav view={view} setView={setView} t={t} />
-      <Toaster theme="dark" position="top-center" />
+      <Toaster theme={theme === "light" ? "light" : "dark"} position="top-center" />
     </div>
   );
 }

@@ -1,6 +1,9 @@
 """Multi-tenant Fatek PLC MQTT gateway for piggery ventilation (clients -> PLC devices -> chambers)."""
-from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request, UploadFile, File
+from fastapi.responses import JSONResponse, StreamingResponse, Response
+import io
+import requests
+from PIL import Image
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -52,6 +55,41 @@ ALARM_REMIND_S = 30 * 60
 DEFAULT_TH = {"temp_max": 28.0, "co2_max": 3000.0}
 LEGACY_DEVICE = "chlodnia-01"
 FERNET = Fernet(os.environ["BROKER_SECRET"].encode())
+
+STORAGE_URL = ((os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com").rstrip("/") \
+    + "/objstore/api/v1/storage"
+STORAGE_APP = "marco-polo-wentylacja"
+_storage_key: Optional[str] = None
+
+
+def init_storage(force: bool = False) -> str:
+    global _storage_key
+    if _storage_key and not force:
+        return _storage_key
+    r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": os.environ["EMERGENT_LLM_KEY"]}, timeout=30)
+    r.raise_for_status()
+    _storage_key = r.json()["storage_key"]
+    return _storage_key
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    for attempt in (0, 1):
+        r = requests.put(f"{STORAGE_URL}/objects/{path}", data=data, timeout=120,
+                         headers={"X-Storage-Key": init_storage(force=attempt == 1), "Content-Type": content_type})
+        if r.status_code != 404 or attempt:
+            r.raise_for_status()
+            return r.json()
+
+
+def get_object(path: str) -> tuple:
+    for attempt in (0, 1):
+        r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": init_storage(force=attempt == 1)}, timeout=60)
+        if r.status_code != 404 or attempt:
+            r.raise_for_status()
+            return r.content, r.headers.get("Content-Type", "image/png")
+
+
+THEME_RX = r"^(green|light|blue|amber)$"
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -584,6 +622,10 @@ async def lifespan(app: FastAPI):
     gateway.loop = asyncio.get_running_loop()
     auth.init(db)
     await auth.setup()
+    try:
+        await asyncio.to_thread(init_storage)
+    except Exception as e:
+        logger.error("Storage init failed: %s", e)
     await migrate_legacy()
     await load_broker()
     await load_registry()
@@ -665,6 +707,12 @@ class ClientIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class ClientPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    display_name: Optional[str] = Field(default=None, max_length=40)
+    theme: Optional[str] = Field(default=None, pattern=THEME_RX)
+
+
 class DeviceIn(BaseModel):
     client_id: str
     name: str = Field(min_length=1, max_length=80)
@@ -738,7 +786,9 @@ async def list_clients(user: dict = Depends(require("superadmin"))):
     out = []
     async for c in db.clients.find({}).sort("name", 1):
         cid = str(c["_id"])
-        out.append({"id": cid, "name": c["name"], "devices": sum(1 for d in DEVICES.values() if d["client_id"] == cid)})
+        out.append({"id": cid, "name": c["name"], "devices": sum(1 for d in DEVICES.values() if d["client_id"] == cid),
+                    "display_name": c.get("display_name", ""), "theme": c.get("theme", "green"),
+                    "logo_version": c.get("logo_version") if c.get("logo_path") else None})
     return {"clients": out}
 
 
@@ -747,6 +797,73 @@ async def create_client(body: ClientIn, user: dict = Depends(require("superadmin
     res = await db.clients.insert_one({"name": body.name.strip(), "created_at": now_iso()})
     await log_event("info", f"Dodano klienta: {body.name.strip()}", {"user": user["email"]}, client_id=str(res.inserted_id))
     return {"id": str(res.inserted_id), "name": body.name.strip(), "devices": 0}
+
+
+async def client_or_404(client_id: str) -> dict:
+    c = await db.clients.find_one({"_id": ObjectId(client_id)}) if ObjectId.is_valid(client_id) else None
+    if not c:
+        raise HTTPException(404, "Client not found")
+    return c
+
+
+@api.patch("/clients/{client_id}")
+async def patch_client(client_id: str, body: ClientPatch, user: dict = Depends(require("superadmin"))):
+    c = await client_or_404(client_id)
+    upd = {k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.clients.update_one({"_id": c["_id"]}, {"$set": upd})
+        await load_registry()
+    return {"ok": True}
+
+
+@api.post("/clients/{client_id}/logo")
+async def upload_logo(client_id: str, file: UploadFile = File(...), user: dict = Depends(require("superadmin"))):
+    c = await client_or_404(client_id)
+    data = await file.read(1_000_001)
+    if len(data) > 1_000_000:
+        raise HTTPException(413, "Logo too large (max 1 MB)")
+    try:
+        img = Image.open(io.BytesIO(data))
+        if img.format not in ("PNG", "JPEG", "WEBP"):
+            raise ValueError("format")
+        img = img.convert("RGBA")
+        img.thumbnail((256, 256))
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+    except Exception:
+        raise HTTPException(422, "Unsupported image (PNG, JPEG or WEBP)")
+    res = await asyncio.to_thread(put_object, f"{STORAGE_APP}/logos/{client_id}/{uuid.uuid4().hex}.png", buf.getvalue(), "image/png")
+    version = uuid.uuid4().hex[:8]
+    await db.clients.update_one({"_id": c["_id"]}, {"$set": {"logo_path": res["path"], "logo_version": version}})
+    return {"ok": True, "logo_version": version}
+
+
+@api.delete("/clients/{client_id}/logo")
+async def delete_logo(client_id: str, user: dict = Depends(require("superadmin"))):
+    c = await client_or_404(client_id)
+    await db.clients.update_one({"_id": c["_id"]}, {"$unset": {"logo_path": "", "logo_version": ""}})
+    return {"ok": True}
+
+
+@api.get("/clients/{client_id}/logo")
+async def get_logo(client_id: str, user: dict = Depends(require("viewer"))):
+    if user["role"] != "superadmin" and user.get("client_id") != client_id:
+        raise HTTPException(404, "Not found")
+    c = await client_or_404(client_id)
+    if not c.get("logo_path"):
+        raise HTTPException(404, "No logo")
+    data, ctype = await asyncio.to_thread(get_object, c["logo_path"])
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@api.get("/branding")
+async def branding(client_id: Optional[str] = None, user: dict = Depends(require("viewer"))):
+    cid = client_id if user["role"] == "superadmin" else user.get("client_id")
+    c = await db.clients.find_one({"_id": ObjectId(cid)}) if cid and ObjectId.is_valid(cid) else None
+    if not c:
+        return {"client_id": None, "app_name": None, "theme": "green", "logo_version": None}
+    return {"client_id": cid, "app_name": c.get("display_name") or None, "theme": c.get("theme", "green"),
+            "logo_version": c.get("logo_version") if c.get("logo_path") else None}
 
 
 @api.delete("/clients/{client_id}")

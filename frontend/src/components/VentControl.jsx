@@ -36,7 +36,7 @@ export const VentControl = ({ ch, t, send }) => {
             <button key={k} data-testid={`chamber-${ch.id}-mode-${k}`} onClick={() => !ch.on || ch.mode === k ? null : mode(k)}
               disabled={!ch.on} className="font-head"
               style={{
-                background: ch.mode === k ? "rgba(52,165,106,0.16)" : "transparent", color: ch.mode === k ? "var(--primary)" : "var(--muted)",
+                background: ch.mode === k ? "rgba(var(--primary-rgb),0.16)" : "transparent", color: ch.mode === k ? "var(--primary)" : "var(--muted)",
                 border: "none", padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: ch.on ? "pointer" : "not-allowed",
                 transition: "background-color 0.2s ease, color 0.2s ease",
               }}>{label}</button>
