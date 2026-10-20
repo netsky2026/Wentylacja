@@ -1,0 +1,26 @@
+{
+  "summary": "Retest of iteration_2 fixes. Backend: 19/19 pytest pass (15 existing incl. test_threshold_alarm_event_logged + 4 new command-validation tests: chamber 9/-1 -> 422, setpoint 'abc'/null -> 422). Frontend at 390x844: double click on chamber-1-sp-up adds 1.0 (22->23, then restored to 22); empty threshold + save shows sonner toast 'Enter valid numbers' with no page errors and thresholds unchanged; humidity and vent charts Y axis 0-100; EN shows Chamber 1/2/3 in chamber switch, chamber screen and settings cards with no 'Komora' anywhere, PL shows Komora 1/2/3; bottom nav switching, chamber tabs, values render, no horizontal overflow (scrollWidth 390). One new minor backend issue: a boolean setpoint value is accepted.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/device/{id}/command", "issue": "set_setpoint with value=true is accepted (200), because isinstance(True, int) is True in Python. The sim treats it as 1 and clamps it to 5.0°C (reproduced: chamber 1 setpoint became 5.0, now restored to 20). Fix: `isinstance(cmd.value, bool) or not isinstance(cmd.value, (int, float))` -> 422."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_piggery_mqtt.py", "/app/test_reports/pytest/pytest_results_iter3.xml"],
+  "action_items": ["Reject boolean values for set_setpoint in device_command (bool is a subclass of int)"],
+  "critical_code_review_comments": [
+    "SettingsView pending setpoint ref resets on every ch.setpoint change. If the echo of click 1 arrives after click 2 was sent, click 3 builds on the echoed value and one step is lost. This is a rare edge case and acceptable for now.",
+    "Editing files under /app/backend/tests triggers uvicorn hot reload, which briefly disconnects MQTT; commands sent during the reload return 503"
+  ],
+  "updated_files": ["/app/backend/tests/test_piggery_mqtt.py"],
+  "success_rate": {"backend": "100% (19/19), plus 1 minor validation gap", "frontend": "100%"},
+  "seed_data_creation": "None. State restored: thresholds 26/3000, 28/3000, 30/3000; setpoints 20/22/24; all chambers on; simulator enabled",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All iteration_2 issues are verified fixed. test_piggery_mqtt.py now has parametrized test_command_validation_422. Use requests, not urllib (urllib gets 403). The recharts Y tick labels can be read with '[data-testid=chart-x] svg text'."
+}

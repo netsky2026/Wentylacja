@@ -39,3 +39,11 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Plant tile at bottom: power kW + kWh total, water l/min + m3 total.
 - Removed cold-store leftovers (defrost/cooling/door). Simulator humidity/CO2 made mean-reverting.
 - Next: Dane tab (history charts for new metrics, thresholds UI, push notifications), testing agent run.
+
+## 2026-06 Update 2 (Navigation + Dane + Ustawienia)
+- Bottom nav: Komory | Dane | Ustawienia; top chamber switch (Komora 1/2/3); each chamber has its own screen.
+- Dane: plant tile (power/water), history charts (temp, humidity, CO2, curtains % closed + chimney, plant power/water), event log.
+- Ustawienia: per-chamber setpoint +/-, alarm thresholds save, notifications, simulator, broker info.
+- Backend: history stores curtains/chimney + plant history; alarm event fires on threshold change; command validation (chamber 0-2, numeric setpoint).
+- Tested: iteration_2, iteration_3 (100%).
+- Backlog: manual curtain/chimney control, daily consumption chart, CSV export.

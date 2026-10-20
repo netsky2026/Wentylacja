@@ -178,3 +178,15 @@ def test_simulator_toggle(s):
     s.post(f"{API}/simulator/toggle?enable=true")
     time.sleep(3)
     assert s.get(f"{API}/health").json()["device_online"] is True
+
+
+# Command validation (iteration 3)
+@pytest.mark.parametrize("body", [
+    {"type": "set_setpoint", "chamber": 9, "value": 20},
+    {"type": "chamber_power", "chamber": -1, "value": True},
+    {"type": "set_setpoint", "chamber": 0, "value": "abc"},
+    {"type": "set_setpoint", "chamber": 0, "value": None},
+])
+def test_command_validation_422(s, body):
+    r = s.post(f"{API}/device/{DEV}/command", json=body, timeout=10)
+    assert r.status_code == 422, r.text

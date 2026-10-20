@@ -473,7 +473,7 @@ async def device_state(device_id: str):
 async def device_command(device_id: str, cmd: CommandIn):
     if "/" in device_id or len(device_id) > 64:
         raise HTTPException(400, "invalid device_id")
-    if cmd.type == "set_setpoint" and not isinstance(cmd.value, (int, float)):
+    if cmd.type == "set_setpoint" and (isinstance(cmd.value, bool) or not isinstance(cmd.value, (int, float))):
         raise HTTPException(422, "value must be a number")
     body = cmd.model_dump()
     body["request_id"] = uuid.uuid4().hex
