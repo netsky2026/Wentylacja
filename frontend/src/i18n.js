@@ -1,6 +1,11 @@
 export const I18N = {
   pl: {
-    appName: "Chlewnia MQTT",
+    appName: "Marco Polo Wentylacja",
+    installTitle: "Aplikacja na telefon",
+    installBtn: "Zainstaluj aplikację",
+    installed: "Aplikacja zainstalowana",
+    installIos: "iPhone: w Safari dotknij Udostępnij → „Do ekranu początkowego”.",
+    installAndroid: "Android: menu ⋮ w Chrome → „Zainstaluj aplikację” / „Dodaj do ekranu głównego”.",
     curtainLeft: "Kurtyna L",
     curtainRight: "Kurtyna P",
     chimney: "Komin",
@@ -94,7 +99,12 @@ export const I18N = {
     alarmCo2: "CO₂",
   },
   en: {
-    appName: "Piggery MQTT",
+    appName: "Marco Polo Wentylacja",
+    installTitle: "Phone app",
+    installBtn: "Install app",
+    installed: "App installed",
+    installIos: "iPhone: in Safari tap Share → “Add to Home Screen”.",
+    installAndroid: "Android: Chrome menu ⋮ → “Install app” / “Add to Home screen”.",
     curtainLeft: "Curtain L",
     curtainRight: "Curtain R",
     chimney: "Chimney",

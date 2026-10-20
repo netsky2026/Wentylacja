@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { BrokerForm } from "@/components/BrokerForm";
+import { InstallCard } from "@/components/InstallCard";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
@@ -81,5 +82,6 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
     </div>
 
     <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
+    <InstallCard t={t} />
   </div>
 );
