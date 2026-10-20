@@ -14,6 +14,8 @@ DEFAULTS = {0: (26.0, 3000.0), 1: (28.0, 3000.0), 2: (30.0, 3000.0)}
 @pytest.fixture(scope="module")
 def s():
     sess = requests.Session()
+    lr = sess.post(f"{API}/auth/login", json={"email": "admin@chlewnia.pl", "password": "Wentylacja!2026"}, timeout=15)
+    assert lr.status_code == 200, lr.text
     for _ in range(15):
         r = sess.get(f"{API}/health", timeout=10)
         if r.ok and r.json().get("device_online"):

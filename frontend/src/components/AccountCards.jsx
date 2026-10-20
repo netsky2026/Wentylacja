@@ -56,7 +56,8 @@ export const UsersCard = ({ t, me }) => {
       toast.error(e.response?.status === 409 ? t.userExists : e.response?.status === 422 ? t.userInvalid : formatApiError(e.response?.data?.detail, t.saveFailed));
     }
   };
-  const del = async (id) => {
+  const del = async (id, email) => {
+    if (!window.confirm(`${t.confirmDelete} ${email}?`)) return;
     try { await axios.delete(`${API}/users/${id}`); load(); } catch (e) { toast.error(t.saveFailed); }
   };
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -71,7 +72,7 @@ export const UsersCard = ({ t, me }) => {
               <div style={{ fontSize: 10, color: "var(--muted)" }}>{t[ROLE_KEYS[u.role]]}</div>
             </div>
             {u.id !== me.id && (
-              <button className="sp-btn" data-testid={`user-delete-${u.email}`} onClick={() => del(u.id)} aria-label="delete"><Trash2 size={14} /></button>
+              <button className="sp-btn" data-testid={`user-delete-${u.email}`} onClick={() => del(u.id, u.email)} aria-label="delete"><Trash2 size={14} /></button>
             )}
           </div>
         ))}

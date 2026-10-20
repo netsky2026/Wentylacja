@@ -1,0 +1,39 @@
+{
+  "summary": "Tested the security hardening on both backend and frontend (iteration 6). Backend: the new test_auth_security.py has 44 tests, 42 pass. The 2 failures are real security findings: (1) the brute-force lockout can be bypassed by spoofing the X-Forwarded-For header; (2) the backend accepts a numeric but partial MQTT state (1 chamber instead of 3) from the public broker. The older test_piggery_mqtt.py was updated to log in first; 40 of 42 pass, and the 2 failures (a timing check on gradual manual-vent movement, plus one follow-on failure) passed on re-run, so they are flaky. Verified working: login sets HttpOnly+Secure cookies; bcrypt hashes start with $2b$; CORS echoes only FRONTEND_URL with credentials and rejects evil.com; every protected endpoint returns 401 without auth (17 checked; GET /api/ is public); WebSocket without a cookie is rejected and with a cookie receives state; viewer and operator get 403 where expected; duplicate user returns 409 and an admin cannot delete itself (400); a deleted user's token stops working; lockout returns 429 after 5 failures, even with the correct password; password change works (400 for wrong current password, 422 for short new password); logout leads to 401; refresh with only the refresh cookie works and an access token is not accepted as a refresh token; Bearer header works; Origin evil.com returns 403; broker hosts localhost, 127.0.0.1, 10.0.0.1, mongodb, 169.254.169.254, 192.168.1.1 and 0.0.0.0 return 422; broker.hivemq.com is accepted and reconnects; broker password is stored only as Fernet password_enc; malicious =HYPERLINK and non-JSON payloads are ignored and the CSV is clean. Frontend (390x844): wrong-password message shown; admin login via button and Enter key; live WebSocket data; admin settings show sim/broker/users cards; created viewer and operator in the UI; viewer sees no power button, vent control or threshold cards (only account, notifications, install); operator sees controls and thresholds but no sim/broker/users; password change toasts for wrong and correct current password, then login with the new password; logout returns to the login screen and the API returns 401; after deleting access_token the axios interceptor recovers (health 401, refresh 200, health 200) and a reload with only the refresh cookie works; deleted users in the UI; EN translations; Dane charts; CSV download; AUTO/manual switching.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login", "issue": "Lockout can be bypassed. The lockout key is the first X-Forwarded-For entry, which the client controls, plus the email. After 5 failures (429), sending X-Forwarded-For: 1.2.3.4 gets 401 again, so password guessing can continue. Fix: key the counter on the email alone (or add a per-email counter), or use the right-most proxy-appended IP / request.client.host.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "MQTT gateway sanitize_state", "issue": "Accepts a numeric but partial chambers list (seen as 1 chamber in GET /device/state; an empty list would also pass). Anyone on the public broker can briefly hide chambers in the UI, inject temp 99 to trigger fake ALARM events and notifications, and poison history. Require exactly the 3 unique ids 0..2. The design limit remains that the public HiveMQ broker has no authentication; payload HMAC or a private broker would close it."},
+      {"endpoint": "POST /api/auth/logout, PUT /api/auth/password", "issue": "JWTs are stateless and never revoked. A stolen refresh token stays valid for 30 days after logout or a password change. Consider a token_version per user, checked in user_from_token."},
+      {"endpoint": "PUT /api/broker", "issue": "is_public_host resolves DNS once, then paho resolves again on connect, so DNS rebinding can still reach private IPs (time-of-check/time-of-use gap). Low risk because only admins can call it."},
+      {"endpoint": "GET /api/events, /api/history", "issue": "limit and hours are not clamped; e.g. ?limit=10000000 gives an unbounded query."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Ustawienia > Użytkownicy", "issues": ["The trash icon deletes a user immediately, with no confirmation"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_auth_security.py", "/app/backend/tests/test_piggery_mqtt.py", "/app/test_reports/pytest/auth_security.xml", "/app/test_reports/pytest/piggery_regression.xml"],
+  "action_items": [
+    "HIGH: stop trusting client-supplied X-Forwarded-For[0] for the login lockout; add a per-email counter",
+    "Make sanitize_state reject payloads that do not contain exactly 3 chambers with unique ids 0, 1, 2",
+    "Optional: token_version-based revocation on logout and password change; clamp the events limit and history hours; add a confirm before deleting a user"
+  ],
+  "critical_code_review_comments": [
+    "The ingress rewrites Set-Cookie to SameSite=None; Domain=preview.emergentagent.com. The backend itself sends SameSite=lax (checked on localhost). CSRF protection therefore depends on origin_guard, which is fine because browsers send Origin on cross-site POST/PUT/DELETE.",
+    "origin_allowed returns True when there is no Origin header. That is acceptable for non-browser clients.",
+    "sanitize_state replaces the device ts with the receive time. Bursty HiveMQ delivery then makes ts-based rate checks flaky (test_manual_mode_and_vent_gradual failed once, passed on re-run).",
+    "server.py is 828 lines (over 700); consider splitting simulator, gateway and routes into separate modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_piggery_mqtt.py (fixture now logs in as admin)", "/app/backend/tests/test_auth_security.py (new)", "/app/backend/tests/mqtt_sniff.py (helper)", "/app/backend/tests/broker_pw_check.py (helper)"],
+  "success_rate": {"backend": "95% (82/86; 2 security findings + 2 flaky regression)", "frontend": "100%"},
+  "seed_data_creation": "Temporary test_* users were created and deleted (API and UI). db.login_attempts cleared. Thresholds 26/28/30 with CO2 3000, setpoints 20/22/24, chamber 3 off, all modes auto, simulator on, broker restored to broker.hivemq.com:1883 with no username or password.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with -n0 (pytest.ini enables xdist and the tests share PLC state). Creating any .py file under /app/backend triggers a uvicorn reload, so wait about 8s afterwards. The ingress rewrites the cookie SameSite to None, so do not assert lax through the public URL. Two failing tests document the open issues: test_brute_force_xff_bypass and test_mqtt_partial_payload. UI testids: login-email, login-password, login-submit, logout-btn, pw-current, pw-new, pw-change, users-card, new-user-*, user-row-{email}, user-delete-{email}, account-card, account-role, sim-toggle, broker-form, chamber-N-power, chamber-N-vent-control, chamber-N-mode-auto/manual, csv-download."
+}

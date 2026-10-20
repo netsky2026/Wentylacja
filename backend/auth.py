@@ -35,14 +35,15 @@ def _secret() -> str:
     return os.environ["JWT_SECRET"]
 
 
-def _token(sub: str, kind: str, delta: timedelta) -> str:
-    return jwt.encode({"sub": sub, "type": kind, "exp": datetime.now(timezone.utc) + delta}, _secret(), JWT_ALGORITHM)
+def _token(u: dict, kind: str, delta: timedelta) -> str:
+    return jwt.encode({"sub": str(u["_id"]), "tv": u.get("tv", 0), "type": kind,
+                       "exp": datetime.now(timezone.utc) + delta}, _secret(), JWT_ALGORITHM)
 
 
-def _set_cookies(resp: Response, uid: str):
+def _set_cookies(resp: Response, u: dict):
     opts = dict(httponly=True, secure=True, samesite="lax", path="/")
-    resp.set_cookie("access_token", _token(uid, "access", timedelta(minutes=ACCESS_MIN)), max_age=ACCESS_MIN * 60, **opts)
-    resp.set_cookie("refresh_token", _token(uid, "refresh", timedelta(days=REFRESH_DAYS)), max_age=REFRESH_DAYS * 86400, **opts)
+    resp.set_cookie("access_token", _token(u, "access", timedelta(minutes=ACCESS_MIN)), max_age=ACCESS_MIN * 60, **opts)
+    resp.set_cookie("refresh_token", _token(u, "refresh", timedelta(days=REFRESH_DAYS)), max_age=REFRESH_DAYS * 86400, **opts)
 
 
 def public_user(u: dict) -> dict:
@@ -58,7 +59,10 @@ async def user_from_token(token: Optional[str], kind: str = "access") -> Optiona
         return None
     if p.get("type") != kind or not ObjectId.is_valid(p.get("sub", "")):
         return None
-    return await db.users.find_one({"_id": ObjectId(p["sub"])})
+    u = await db.users.find_one({"_id": ObjectId(p["sub"])})
+    if not u or u.get("tv", 0) != p.get("tv", 0):
+        return None
+    return u
 
 
 async def get_current_user(request: Request) -> dict:
@@ -101,10 +105,9 @@ router = APIRouter(prefix="/api")
 
 
 @router.post("/auth/login")
-async def login(body: LoginIn, request: Request, response: Response):
+async def login(body: LoginIn, response: Response):
     email = body.email.strip().lower()
-    ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "").split(",")[0].strip()
-    ident = f"{ip}:{email}"
+    ident = email  # per-account lockout; client IP headers are spoofable
     att = await db.login_attempts.find_one({"identifier": ident})
     now = datetime.now(timezone.utc)
     if att and att.get("count", 0) >= MAX_ATTEMPTS and att["last"].replace(tzinfo=timezone.utc) > now - timedelta(minutes=LOCK_MIN):
@@ -117,7 +120,7 @@ async def login(body: LoginIn, request: Request, response: Response):
             await db.login_attempts.update_one({"identifier": ident}, {"$inc": {"count": 1}, "$set": {"last": now}}, upsert=True)
         raise HTTPException(401, "Invalid email or password")
     await db.login_attempts.delete_one({"identifier": ident})
-    _set_cookies(response, str(u["_id"]))
+    _set_cookies(response, u)
     return public_user(u)
 
 
@@ -133,7 +136,7 @@ async def refresh(request: Request, response: Response):
     u = await user_from_token(request.cookies.get("refresh_token"), "refresh")
     if not u:
         raise HTTPException(401, "Not authenticated")
-    _set_cookies(response, str(u["_id"]))
+    _set_cookies(response, u)
     return public_user(u)
 
 
@@ -143,10 +146,12 @@ async def me(user: dict = Depends(get_current_user)):
 
 
 @router.put("/auth/password")
-async def change_password(body: PasswordIn, user: dict = Depends(get_current_user)):
+async def change_password(body: PasswordIn, response: Response, user: dict = Depends(get_current_user)):
     if not verify_password(body.current_password, user["password_hash"]):
         raise HTTPException(400, "Current password is incorrect")
-    await db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(body.new_password)}})
+    user["tv"] = user.get("tv", 0) + 1  # revokes all other sessions
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(body.new_password), "tv": user["tv"]}})
+    _set_cookies(response, user)
     return {"ok": True}
 
 
@@ -189,5 +194,6 @@ async def setup():
         await db.users.insert_one({"email": email, "name": "Admin", "role": "admin",
                                    "password_hash": hash_password(pw), "created_at": datetime.now(timezone.utc)})
     elif not verify_password(pw, u["password_hash"]):
-        await db.users.update_one({"_id": u["_id"]}, {"$set": {"password_hash": hash_password(pw), "role": "admin"}})
+        await db.users.update_one({"_id": u["_id"]}, {"$set": {"password_hash": hash_password(pw), "role": "admin"},
+                                                    "$inc": {"tv": 1}})
 

@@ -294,8 +294,12 @@ def sanitize_state(p) -> Optional[dict]:
     """Accept only well-formed numeric PLC state; anything else from the broker is dropped."""
     if not isinstance(p, dict) or not isinstance(p.get("chambers"), list):
         return None
+    ids = [c.get("id") if isinstance(c, dict) else None for c in p["chambers"]]
+    if len(ids) != len(DEFAULT_THRESHOLDS) or not all(_num(i) for i in ids) or \
+            sorted(int(i) for i in ids) != sorted(DEFAULT_THRESHOLDS):
+        return None
     chambers = []
-    for ch in p["chambers"][:len(DEFAULT_THRESHOLDS)]:
+    for ch in sorted(p["chambers"], key=lambda c: int(c["id"])):
         if not isinstance(ch, dict) or not _num(ch.get("id")) or int(ch["id"]) not in DEFAULT_THRESHOLDS:
             return None
         cid = int(ch["id"])
@@ -659,6 +663,7 @@ async def device_command(device_id: str, cmd: CommandIn):
 
 @api.get("/events", dependencies=[Depends(require("viewer"))])
 async def events(limit: int = 100):
+    limit = max(1, min(500, limit))
     docs = await db.plc_events.find({}, {"_id": 0}).sort("ts", -1).to_list(limit)
     return {"events": docs}
 
@@ -697,6 +702,7 @@ async def set_threshold(chamber: int, body: ThresholdIn):
 
 @api.get("/history", dependencies=[Depends(require("viewer"))])
 async def history(hours: int = 3):
+    hours = max(1, min(24, hours))
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     docs = await db.plc_history.find(
         {"ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1).to_list(6000)
