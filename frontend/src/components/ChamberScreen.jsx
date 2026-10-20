@@ -1,5 +1,6 @@
 import { Thermometer, Droplets, Wind, Power, Flame, AlertTriangle, Target } from "lucide-react";
 import { CurtainWindow, ChimneyGauge } from "@/components/Gauges";
+import { VentControl } from "@/components/VentControl";
 
 const Sensor = ({ icon, label, value, unit, warn, testid }) => (
   <div className="sensor" data-testid={testid}>
@@ -43,7 +44,9 @@ export const ChamberScreen = ({ ch, t, send }) => (
     </div>
 
     <div className="reg-cell mb-3">
-      <div className="flex items-center gap-1 mb-3" style={{ color: "var(--muted)", fontSize: 11 }}><Thermometer size={11} /> {t.ventilation}</div>
+      <div className="flex items-center gap-1 mb-3" style={{ color: "var(--muted)", fontSize: 11 }}><Thermometer size={11} /> {t.ventilation}
+        <span data-testid={`chamber-${ch.id}-mode-badge`} style={{ marginLeft: "auto", color: ch.mode === "manual" ? "#c9a46a" : "var(--muted)" }}>
+          {ch.mode === "manual" ? t.modeManual : t.modeAuto}</span></div>
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", alignItems: "end" }}>
         <CurtainWindow open={ch.curtain_left} label={t.curtainLeft} testid={`chamber-${ch.id}-curtain-left`} scale={1.3} />
         <ChimneyGauge open={ch.chimney} label={t.chimney} testid={`chamber-${ch.id}-chimney`} scale={1.3} />
@@ -51,6 +54,8 @@ export const ChamberScreen = ({ ch, t, send }) => (
       </div>
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", marginTop: 8 }}>{t.curtainHint}</div>
     </div>
+
+    <VentControl ch={ch} t={t} send={send} />
 
     <button data-testid={`chamber-${ch.id}-power`} onClick={() => send({ type: "chamber_power", chamber: ch.id, value: !ch.on })}
       className="action-btn" style={{

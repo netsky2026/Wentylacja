@@ -202,3 +202,7 @@ body {
 .num-input:focus { outline: none; border-color: #5a6470; }
 .fade-in { animation: fadeIn 0.25s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.vent-slider > span:first-child { background: #2a2f35 !important; height: 6px; }
+.vent-slider > span:first-child > span { background: #9aa7b4 !important; }
+.vent-slider [role="slider"] { width: 20px; height: 20px; background: #F5F5F7 !important; border: 2px solid #5a6470 !important; cursor: grab; }

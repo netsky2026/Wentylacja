@@ -1,4 +1,5 @@
 import { Zap, Droplet } from "lucide-react";
+import { DailyUsage, CsvExport } from "@/components/UsageExport";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -57,6 +58,7 @@ export const DataView = ({ t, ch, plant, history, plantHistory, events }) => {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="data-view">
       {plant && <PlantTile plant={plant} t={t} />}
+      <DailyUsage t={t} />
       <div className="font-head" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>{t.history} · {t.chamberWord} {(ch?.id ?? 0) + 1} · 3 {t.hours}</div>
       <Chart t={t} title={t.historyTemp} data={data} lines={[["temp", "#d6dbe0", t.temp]]} testid="chart-temp" />
       <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "#7fa3b8", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
@@ -65,6 +67,8 @@ export const DataView = ({ t, ch, plant, history, plantHistory, events }) => {
         lines={[["cl_closed", "#8a9bb0", t.curtainLeft], ["cr_closed", "#6f8a7a", t.curtainRight], ["chimney", "#c9c9c9", t.chimney]]} />
       <Chart t={t} title={t.historyPlant} data={plantHistory} testid="chart-plant"
         lines={[["power_kw", "#c9a46a", `${t.power} kW`], ["water_lpm", "#7fa3b8", `${t.water} l/min`]]} />
+
+      {ch && <CsvExport t={t} ch={ch} />}
 
       <div className="panel panel-pad">
         <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{t.eventLog}</div>

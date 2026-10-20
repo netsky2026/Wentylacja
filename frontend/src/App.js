@@ -148,7 +148,7 @@ export default function App() {
           <DataView t={t} ch={ch} plant={state?.plant} history={history} plantHistory={plantHistory} events={events} />
         ) : (
           <SettingsView t={t} chambers={chambers} thresholds={thresholds} send={send} saveThreshold={saveThreshold}
-            notifPerm={notifPerm} requestNotif={requestNotif} simOn={simOn} toggleSim={toggleSim} config={config} />
+            notifPerm={notifPerm} requestNotif={requestNotif} simOn={simOn} toggleSim={toggleSim} config={config} onConfigSaved={setConfig} />
         )}
       </div>
       <BottomNav view={view} setView={setView} t={t} />

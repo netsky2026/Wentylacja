@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { BrokerForm } from "@/components/BrokerForm";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
@@ -50,14 +51,8 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
   );
 };
 
-const Row = ({ k, v, testid }) => (
-  <div className="flex items-center justify-between" style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-    <span style={{ color: "var(--muted)", fontSize: 12 }}>{k}</span>
-    <span data-testid={testid} style={{ fontSize: 11, textAlign: "right", wordBreak: "break-all", maxWidth: "62%" }}>{v}</span>
-  </div>
-);
 
-export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, simOn, toggleSim, config }) => (
+export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, simOn, toggleSim, config, onConfigSaved }) => (
   <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="settings-view">
     <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint}</div>
     {chambers.map((ch) => (
@@ -85,15 +80,6 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
         }}>{simOn ? t.on : t.off}</button>
     </div>
 
-    {config && (
-      <div className="panel panel-pad">
-        <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t.settings}</div>
-        <Row k={t.host} v={config.broker_host} testid="cfg-host" />
-        <Row k={t.port} v={config.broker_port} testid="cfg-port" />
-        <Row k={t.prefix} v={config.prefix} testid="cfg-prefix" />
-        <Row k={t.stateTopic} v={config.state_topic} testid="cfg-state-topic" />
-        <Row k={t.commandTopic} v={config.command_topic} testid="cfg-command-topic" />
-      </div>
-    )}
+    <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
   </div>
 );

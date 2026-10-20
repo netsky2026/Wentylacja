@@ -14,6 +14,7 @@ through the public broker just like a real Fatek controller.
 from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import json
@@ -46,6 +47,10 @@ MQTT_PORT = int(os.environ.get('MQTT_PORT', '1883'))
 MQTT_PREFIX = os.environ.get('MQTT_PREFIX', 'emgt-fatek-7f3a9c').strip('/')
 
 DEVICE_ID = "chlodnia-01"
+MQTT_USER = ""
+MQTT_PASS = ""
+MQTT_TLS = False
+SAMPLE_S = 15
 
 # per-chamber alarm thresholds (loaded from Mongo at startup, defaults below)
 DEFAULT_THRESHOLDS = {
@@ -61,6 +66,16 @@ db = client[DB_NAME]
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def make_client(tag: str) -> mqtt.Client:
+    c = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                    client_id=f"{tag}-{uuid.uuid4().hex[:8]}")
+    if MQTT_USER:
+        c.username_pw_set(MQTT_USER, MQTT_PASS or None)
+    if MQTT_TLS:
+        c.tls_set()
+    return c
 
 
 def state_topic(device_id: str) -> str:
@@ -93,12 +108,25 @@ class PiggerySimulator:
         self.plant = {"power_kw": 0.0, "power_kwh": 128.4, "water_lpm": 0.0, "water_total_l": 5420.0}
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
-        self.mc = mqtt.Client(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"fatek-sim-{uuid.uuid4().hex[:8]}",
-        )
+        self.mc: Optional[mqtt.Client] = None
+        for ch in self.chambers:
+            ch["mode"] = "auto"
+            ch["manual"] = {"curtain_left": ch["curtain_left"], "curtain_right": ch["curtain_right"],
+                          "chimney": ch["chimney"]}
+
+    def mqtt_start(self):
+        self.mc = make_client("fatek-sim")
         self.mc.on_connect = self._on_connect
         self.mc.on_message = self._on_message
+        self.mc.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
+        self.mc.loop_start()
+
+    def mqtt_stop(self):
+        try:
+            self.mc.loop_stop()
+            self.mc.disconnect()
+        except Exception:
+            pass
 
     def _on_connect(self, c, u, flags, rc, props):
         logger.info("SIM connected rc=%s", rc)
@@ -123,6 +151,16 @@ class PiggerySimulator:
                 ch["setpoint"] = max(5.0, min(35.0, float(cmd.get("value"))))
             except (TypeError, ValueError):
                 pass
+        elif t == "set_mode":
+            if cmd.get("value") in ("auto", "manual"):
+                ch["mode"] = cmd["value"]
+                if ch["mode"] == "manual":
+                    ch["manual"] = {k: ch[k] for k in ("curtain_left", "curtain_right", "chimney")}
+        elif t == "set_vent":
+            val = cmd.get("value") or {}
+            for k in ("curtain_left", "curtain_right", "chimney"):
+                if isinstance(val.get(k), (int, float)) and not isinstance(val.get(k), bool):
+                    ch["manual"][k] = max(0.0, min(100.0, float(val[k])))
         elif t == "chamber_power":
             ch["on"] = bool(cmd.get("value"))
             if not ch["on"]:
@@ -150,9 +188,13 @@ class PiggerySimulator:
             err = ch["temp"] - sp  # >0 too warm -> ventilate; <0 too cold -> heat
             # ventilation demand 0..100 from how far above setpoint
             target_vent = max(0.0, min(100.0, (err + 1.0) * 28.0))
-            ch["curtain_left"] = round(self._approach(ch["curtain_left"], target_vent, 3), 1)
-            ch["curtain_right"] = round(self._approach(ch["curtain_right"], target_vent + 4, 3), 1)
-            ch["chimney"] = round(self._approach(ch["chimney"], target_vent, 4), 1)
+            if ch["mode"] == "manual":
+                tl, tr, tc = ch["manual"]["curtain_left"], ch["manual"]["curtain_right"], ch["manual"]["chimney"]
+            else:
+                tl, tr, tc = target_vent, min(100.0, target_vent + 4), target_vent
+            ch["curtain_left"] = round(self._approach(ch["curtain_left"], tl, 3), 1)
+            ch["curtain_right"] = round(self._approach(ch["curtain_right"], tr, 3), 1)
+            ch["chimney"] = round(self._approach(ch["chimney"], tc, 4), 1)
             ch["heating"] = err < -1.0
             # temperature dynamics
             vent = (ch["curtain_left"] + ch["curtain_right"] + ch["chimney"]) / 3.0
@@ -217,19 +259,14 @@ class PiggerySimulator:
             logger.warning("SIM publish failed: %s", e)
 
     def start(self):
-        self.mc.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
-        self.mc.loop_start()
+        self.mqtt_start()
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def stop(self):
         self._stop.set()
-        try:
-            self.mc.loop_stop()
-            self.mc.disconnect()
-        except Exception:
-            pass
+        self.mqtt_stop()
 
 
 # ============================================================
@@ -242,13 +279,23 @@ class Gateway:
         self.latest_state: Optional[dict] = None
         self.last_seen: Optional[float] = None
         self.connected = False
-        self.mc = mqtt.Client(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"fatek-api-{uuid.uuid4().hex[:8]}",
-        )
+        self.mc: Optional[mqtt.Client] = None
+
+    def mqtt_start(self):
+        self.mc = make_client("fatek-api")
         self.mc.on_connect = self._on_connect
         self.mc.on_disconnect = self._on_disconnect
         self.mc.on_message = self._on_message
+        self.mc.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
+        self.mc.loop_start()
+
+    def mqtt_stop(self):
+        try:
+            self.mc.loop_stop()
+            self.mc.disconnect()
+        except Exception:
+            pass
+        self.connected = False
 
     def _on_connect(self, c, u, flags, rc, props):
         self.connected = True
@@ -341,15 +388,10 @@ class Gateway:
 
     def start(self, loop):
         self.loop = loop
-        self.mc.connect_async(MQTT_HOST, MQTT_PORT, keepalive=60)
-        self.mc.loop_start()
+        self.mqtt_start()
 
     def stop(self):
-        try:
-            self.mc.loop_stop()
-            self.mc.disconnect()
-        except Exception:
-            pass
+        self.mqtt_stop()
 
 
 gateway = Gateway()
@@ -372,6 +414,23 @@ async def load_thresholds():
     THRESHOLDS = dict(DEFAULT_THRESHOLDS)
     async for doc in db.chamber_thresholds.find({}):
         THRESHOLDS[doc["chamber"]] = {"temp_max": doc["temp_max"], "co2_max": doc["co2_max"]}
+
+
+def set_broker_globals(cfg: dict):
+    global MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS, MQTT_TLS, MQTT_PREFIX, DEVICE_ID
+    MQTT_HOST = cfg["host"]
+    MQTT_PORT = int(cfg["port"])
+    MQTT_USER = cfg.get("username") or ""
+    MQTT_PASS = cfg.get("password") or ""
+    MQTT_TLS = bool(cfg.get("tls"))
+    MQTT_PREFIX = cfg["prefix"].strip("/")
+    DEVICE_ID = cfg["device_id"]
+
+
+async def load_broker():
+    doc = await db.broker_config.find_one({"_id": "main"})
+    if doc:
+        set_broker_globals(doc)
 
 
 async def history_sampler():
@@ -401,6 +460,7 @@ async def history_sampler():
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     await load_thresholds()
+    await load_broker()
     try:
         await db.plc_history.create_index("ts")
     except Exception:
@@ -420,9 +480,19 @@ api = APIRouter(prefix="/api")
 
 
 class CommandIn(BaseModel):
-    type: str = Field(pattern=r"^(set_setpoint|chamber_power)$")
+    type: str = Field(pattern=r"^(set_setpoint|chamber_power|set_mode|set_vent)$")
     chamber: int = Field(ge=0, le=2)
     value: Any = None
+
+
+class BrokerIn(BaseModel):
+    host: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9.\-]+$")
+    port: int = Field(ge=1, le=65535)
+    username: str = Field(default="", max_length=128)
+    password: Optional[str] = Field(default=None, max_length=256)
+    tls: bool = False
+    prefix: str = Field(min_length=1, max_length=128, pattern=r"^[^#+]+$")
+    device_id: str = Field(min_length=1, max_length=64, pattern=r"^[^/#+]+$")
 
 
 class ThresholdIn(BaseModel):
@@ -440,6 +510,9 @@ async def get_config():
     return {
         "broker_host": MQTT_HOST,
         "broker_port": MQTT_PORT,
+        "username": MQTT_USER,
+        "has_password": bool(MQTT_PASS),
+        "tls": MQTT_TLS,
         "prefix": MQTT_PREFIX,
         "device_id": DEVICE_ID,
         "state_topic": state_topic(DEVICE_ID),
@@ -475,6 +548,14 @@ async def device_command(device_id: str, cmd: CommandIn):
         raise HTTPException(400, "invalid device_id")
     if cmd.type == "set_setpoint" and (isinstance(cmd.value, bool) or not isinstance(cmd.value, (int, float))):
         raise HTTPException(422, "value must be a number")
+    if cmd.type == "set_mode" and cmd.value not in ("auto", "manual"):
+        raise HTTPException(422, "value must be auto|manual")
+    if cmd.type == "set_vent":
+        v = cmd.value
+        if not isinstance(v, dict) or not v or any(
+                k not in ("curtain_left", "curtain_right", "chimney") or isinstance(x, bool)
+                or not isinstance(x, (int, float)) or not 0 <= x <= 100 for k, x in v.items()):
+            raise HTTPException(422, "invalid vent values")
     body = cmd.model_dump()
     body["request_id"] = uuid.uuid4().hex
     if not gateway.publish_command(device_id, body):
@@ -482,6 +563,12 @@ async def device_command(device_id: str, cmd: CommandIn):
     name = f"Komora {cmd.chamber + 1}"
     if cmd.type == "set_setpoint":
         msg = f"{name}: nastawa = {cmd.value}°C"
+    elif cmd.type == "set_mode":
+        msg = f"{name}: tryb {'RĘCZNY' if cmd.value == 'manual' else 'AUTO'}"
+    elif cmd.type == "set_vent":
+        lbl = {"curtain_left": "kurtyna L zamkn.", "curtain_right": "kurtyna P zamkn.", "chimney": "komin otw."}
+        msg = f"{name}: " + ", ".join(
+            f"{lbl[k]} {round(100 - x) if k != 'chimney' else round(x)}%" for k, x in cmd.value.items())
     else:
         msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
     gateway.log_event_sync("command", msg, body)
@@ -537,6 +624,67 @@ async def history(hours: int = 3):
     plant = await db.plc_plant_history.find(
         {"ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1).to_list(2000)
     return {"history": out, "plant": plant}
+
+
+@api.put("/broker")
+async def set_broker(body: BrokerIn):
+    cfg = body.model_dump()
+    if cfg["password"] is None:
+        cfg["password"] = MQTT_PASS
+    await db.broker_config.update_one({"_id": "main"}, {"$set": cfg}, upsert=True)
+    await asyncio.to_thread(gateway.mqtt_stop)
+    await asyncio.to_thread(simulator.mqtt_stop)
+    set_broker_globals(cfg)
+    gateway.latest_state = None
+    gateway.last_seen = None
+    gateway.mqtt_start()
+    simulator.mqtt_start()
+    gateway.log_event_sync("info", f"Zmieniono broker: {MQTT_HOST}:{MQTT_PORT}", {})
+    return await get_config()
+
+
+@api.get("/usage/daily")
+async def usage_daily(days: int = 7):
+    days = max(1, min(60, days))
+    start = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date()
+    rows = await db.plc_plant_history.aggregate([
+        {"$match": {"ts": {"$gte": start.isoformat()}}},
+        {"$group": {"_id": {"$substr": ["$ts", 0, 10]},
+                    "p": {"$sum": "$power_kw"}, "w": {"$sum": "$water_lpm"}}},
+    ]).to_list(100)
+    by = {r["_id"]: r for r in rows}
+    out = []
+    for i in range(days):
+        d = (start + timedelta(days=i)).isoformat()
+        r = by.get(d, {"p": 0, "w": 0})
+        out.append({"date": d, "kwh": round(r["p"] * SAMPLE_S / 3600, 2),
+                    "water_m3": round(r["w"] * SAMPLE_S / 60 / 1000, 3)})
+    return {"days": out}
+
+
+@api.get("/history/csv")
+async def history_csv(chamber: int, hours: int = 24):
+    if chamber not in DEFAULT_THRESHOLDS:
+        raise HTTPException(404, "unknown chamber")
+    hours = max(1, min(24 * 31, hours))
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    cursor = db.plc_history.find({"chamber": chamber, "ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1)
+
+    def fmt(v):
+        return "" if v is None else str(v).replace(".", ",")
+
+    async def gen():
+        yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_zamkn_%;kurtyna_P_zamkn_%;komin_otw_%\n"
+        async for d in cursor:
+            cl, cr = d.get("curtain_left"), d.get("curtain_right")
+            ts = datetime.fromisoformat(d["ts"]).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            yield ";".join([ts, fmt(d.get("temp")), fmt(d.get("humidity")), fmt(d.get("co2")),
+                            fmt(None if cl is None else round(100 - cl, 1)),
+                            fmt(None if cr is None else round(100 - cr, 1)), fmt(d.get("chimney"))]) + "\n"
+
+    fname = f"komora{chamber + 1}_{hours}h_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return StreamingResponse(gen(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @app.websocket("/api/ws")
