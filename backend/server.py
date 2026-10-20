@@ -517,6 +517,20 @@ async def history_sampler():
 alarm_active: dict = {}  # "device:chamber" -> last notification epoch
 
 
+async def ws_revalidator():
+    """Drop WS sessions whose user was deleted or changed role/client/password."""
+    while True:
+        await asyncio.sleep(30)
+        for ws, u in list(gateway.ws_clients.items()):
+            cur = await db.users.find_one({"_id": u["_id"]})
+            if not cur or any(cur.get(k) != u.get(k) for k in ("role", "client_id", "tv")):
+                gateway.ws_clients.pop(ws, None)
+                try:
+                    await ws.close(code=4401)
+                except Exception:
+                    pass
+
+
 async def save_alarm_state():
     await db.alarm_state.update_one({"_id": "main"}, {"$set": {"active": alarm_active}}, upsert=True)
 
@@ -578,7 +592,8 @@ async def lifespan(app: FastAPI):
     await db.devices.create_index("device_id", unique=True)
     gateway.mqtt_start()
     sims.sync()
-    tasks = [asyncio.create_task(history_sampler()), asyncio.create_task(alarm_notifier())]
+    tasks = [asyncio.create_task(history_sampler()), asyncio.create_task(alarm_notifier()),
+             asyncio.create_task(ws_revalidator())]
     yield
     for t in tasks:
         t.cancel()
@@ -798,7 +813,11 @@ async def delete_device(device_id: str, user: dict = Depends(require("superadmin
     label = dev_label(device_id)
     cid = DEVICES[device_id]["client_id"]
     await db.devices.delete_one({"device_id": device_id})
-    await db.device_thresholds.delete_many({"device_id": device_id})
+    for coll in ("device_thresholds", "plc_history", "plc_plant_history", "plc_events"):
+        await db[coll].delete_many({"device_id": device_id})
+    for k in [k for k in alarm_active if k.startswith(f"{device_id}:")]:
+        alarm_active.pop(k)
+    await save_alarm_state()
     await load_registry()
     sims.sync()
     gateway.states.pop(device_id, None)
@@ -929,8 +948,8 @@ async def history_csv(device_id: str, chamber: int, hours: int = 24, user: dict 
 async def events(device_id: Optional[str] = None, limit: int = 100, user: dict = Depends(require("viewer"))):
     q: dict = {} if user["role"] == "superadmin" else {"client_id": user.get("client_id")}
     if device_id:
-        device_or_404(user, device_id)
-        q = {"$or": [{"device_id": device_id}, {"device_id": None, **q}]}
+        d = device_or_404(user, device_id)
+        q = {"client_id": d["client_id"], "$or": [{"device_id": device_id}, {"device_id": None}]}
     docs = await db.plc_events.find(q, {"_id": 0}).sort("ts", -1).to_list(max(1, min(500, limit)))
     return {"events": docs}
 

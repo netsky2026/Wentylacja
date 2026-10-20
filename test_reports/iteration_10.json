@@ -1,0 +1,42 @@
+{
+  "summary": "Multi-tenant rebuild tested end-to-end. Backend: 14/14 new pytest tests pass (tests/test_multitenant.py). They cover the registry, the fleet lifecycle, chamber bounds, tenant isolation over REST and WS, MQTT payload validation and per-client mocked alarms. Frontend at 390x844: superadmin device-select, chamber tabs switching between K1..K6 and Komora 1..3, selection persisting after reload, the whole FleetCard flow, client-admin scoped UI, viewer read-only UI, AUTO/manual, Dane charts/daily usage/CSV link, setpoint +/-, threshold save, broker form and PL/EN. No horizontal overflow (doc width 390). One medium tenant-isolation leak found: when a deleted device_id is re-used for another client, the new client sees the old client's data.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/devices/{id} + POST /api/devices", "issue": "TENANT LEAK on device_id re-use. delete_device only removes device_thresholds. plc_events, plc_history, plc_plant_history and alarm_active keys stay keyed by device_id. If the same device_id is re-created under another client, that client's users can read the old client's events through /api/events?device_id=X (the query matches by device_id only, not client_id). Reproduced: a client-B viewer saw 'Dodano sterownik: TEST_A_... / devA' and 'devA – Komora 1: progi ...' from client A. History, CSV and usage would leak the same way."},
+      {"endpoint": "MQTT per-device credentials", "issue": "Generated mqtt_username/password are cosmetic on public HiveMQ: no ACLs, so anyone who knows the prefix can publish state or commands for any device. Expected for the MVP; enforcing them needs a private broker with an ACL plugin."},
+      {"endpoint": "WS /api/ws", "issue": "The user object is cached when the socket connects. Deleting a user or changing role/client does not affect an open WS until it reconnects (access token lifetime is 15 min)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Dashboard device persistence", "issue": "After the selected device is deleted, the UI correctly falls back to devices[0], but localStorage 'device' keeps the stale id. Harmless.", "selector": "[data-testid=device-select]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "UsersCard (390px)", "issues": ["The new-user-role select cuts off 'Operator (sterowanie)' as 'Operator (sterc'"]},
+      {"screen": "ChamberSwitch with 6 chambers", "issues": ["The K6 tab is cut at the right edge with no scroll affordance (fade or arrow). It scrolls correctly (scrollWidth 384 > clientWidth 360)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_multitenant.py", "/app/tests/test_multitenant.py", "/app/tests/probe_reuse.py", "/app/test_reports/pytest/pytest_multitenant.xml"],
+  "action_items": [
+    "On DELETE /api/devices/{id}: also delete plc_events, plc_history and plc_plant_history for that device_id and drop its alarm_active keys. Alternatively, scope the /api/events device_id query with client_id for non-superadmins.",
+    "Optional: give the role select more width, or a shorter label, at 390px",
+    "Optional: add a scroll hint to the chamber tabs when there are more than 5 chambers"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1016 lines, over the 700-line guideline. Split it into simulator.py, gateway.py and routes/*.",
+    "events(): `{'device_id': None, **q}` inside $or is fine. However, `{'device_id': device_id}` is not filtered by client_id, which causes the re-use leak above.",
+    "PATCH /devices/{id} with simulated=false keeps stale gateway.states, so the last snapshot is still served with online=false. This is acceptable, but consider marking it or clearing it.",
+    "sanitize_state casts float ids with int() (1.5 -> 1). Minor.",
+    "Old test files in /app/backend/tests (test_piggery_mqtt.py, test_iteration7/8/9*.py, restore_state_it8.py) target removed endpoints and will fail. Delete or update them."
+  ],
+  "updated_files": ["/app/backend/tests/test_multitenant.py", "/app/tests/test_multitenant.py", "/app/tests/probe_reuse.py", "/app/tests/mk_ui_users.py"],
+  "success_rate": {"backend": "100% (14/14); 1 isolation edge-case leak found via probe", "frontend": "100% of tested flows"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026 (works; bcrypt $2b$; httpOnly secure cookies; lockout returns 429 on the 6th failed attempt)",
+  "seed_data_creation": "None kept. All test_* users and TEST_* clients/devices were deleted. Thresholds reset to 28/3000 on all chambers, including chlodnia-01 (it had 26/28/30 before). Modes set to auto, setpoints at sim defaults. login_attempts, alarm_notifications and alarm_state cleared; recipients empty.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=... pytest /app/tests/test_multitenant.py -v -p no:cacheprovider (prefer the /app/tests copy: editing files under /app/backend triggers a uvicorn reload and HiveMQ reconnect). The tests create and clean up their own data. The MQTT test publishes directly to broker.hivemq.com under prefix emgt-fatek-7f3a9c. probe_reuse.py reproduces the device_id re-use leak.",
+  "rca of the issue": "Device re-use leak: history and event collections are keyed by device_id, and delete_device does not purge them. events() for a visible device queries {device_id: X} without a client_id filter, so leftover rows from the previous owner are returned. Mitigation: purge on delete, or add client_id to history docs and filter by it."
+}

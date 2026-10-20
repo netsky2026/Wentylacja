@@ -73,3 +73,10 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Green accent theme (#34A56A).
 - Tested iteration_8/9 (100%).
 - Next: connect real e-mail/SMS provider (Resend/Twilio), deploy when user decides.
+
+## 2026-06 Update 7 (Multi-tenant)
+- Clients -> PLC devices (1..n per client) -> chambers (1..10 per device). Collections: clients, devices{device_id,client_id,name,chambers,simulated,mqtt_username,mqtt_password_enc}, device_thresholds, history/plant/events with device_id(+client_id).
+- Topics {prefix}/{device_id}/state|command on one shared broker; per-device MQTT credentials generated (to configure on broker ACL + PLC gateway).
+- Roles: superadmin (manages clients/devices/broker), client admin (own users + alarm recipients), operator, viewer. WS broadcasts filtered by client.
+- Simulator per device (simulated flag). Legacy data migrated to client "Marco Polo"/device chlodnia-01.
+- API now device-scoped: /api/devices, /api/devices/{id}/command|thresholds|history|history/csv|usage/daily, /api/events?device_id, /api/alarm-settings?client_id, /api/clients.

@@ -62,6 +62,9 @@ function Dashboard({ t, lang, setLang, user, onLogout }) {
   }, []);
 
   const dev = devices?.find((d) => d.device_id === deviceId) || devices?.[0];
+  useEffect(() => {
+    if (devices && deviceId && !devices.some((d) => d.device_id === deviceId)) localStorage.removeItem("device");
+  }, [devices, deviceId]);
   const devId = dev?.device_id;
 
   const loadHistory = useCallback(async () => {
