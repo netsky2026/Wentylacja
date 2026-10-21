@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only test (mobile 390x844) of the superadmin 'add farm' discoverability fix. PASS: FleetCard is now the 2nd child of settings-view (account-card, fleet-card, then chamber thresholds), top y=435 on mobile with devices (partly visible without scrolling), y=377 in empty state. Adding a client via new-client-name/new-client-add works and the row appears; deleting via client-delete + confirm removes it server-side (verified via GET /api/clients). Empty state (page.route mocking GET /api/devices -> {devices: []}): superadmin sees no-devices-admin with 'Dodaj pierwszą fermę' + hint + add-first-farm ('Nowy klient'); click opens Settings with fleet-card visible in the viewport; plain no-devices not shown to superadmin. Temporary viewer user (Marco Polo) with mocked empty devices sees no-devices text 'Brak przypisanych sterowników. Skontaktuj się z administratorem.', no add-first-farm, no fleet-card/broker-form in Settings. Regression: superadmin Settings with a device selected still shows alarm-recipients-card, users-card, broker-form, site-card, install-card.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Delete client in FleetCard", "issue": "In 2 runs the deleted client row (and its option in new-device-client select) was still in the DOM 3s after accepting confirm, though it was gone in the final screenshot and from the API. Probably slow preview network (page load hit timeouts as well). Not a confirmed bug; low priority.", "affected_selectors": ["[data-testid^='client-delete-']"]}
+    ],
+    "design_issues": [
+      {"screen": "Dashboard empty state (no devices)", "issues": ["status-bar still shows 'Sterownik offline' (device-online) even though there are no controllers. This is misleading; hide device-online when devices.length === 0", "firstFarmHint says 'Nie masz jeszcze żadnego klienta ani sterownika' even when clients exist but have no devices. Consider wording it around controllers only, or branching on clients count"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: hide the device-online indicator in status-bar when there are no devices",
+    "Optional: adjust the firstFarmHint copy for the case where clients exist but have no devices"
+  ],
+  "critical_code_review_comments": [
+    "SettingsView: the FleetCard move is correct. With 6 chambers the fleet-card starts at about 435px on mobile, so it is visible without scrolling past the threshold cards",
+    "App.js empty state branches correctly on user.role === 'superadmin'; add-first-farm uses setView('settings')"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "Created and deleted a temporary viewer user test_viewer_it16@example.com (Marco Polo) and clients TEST_Ferma_IT16/IT16b/IT16c/IT16d; all removed. DB is back to the original 2 clients and 1 superadmin user.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To simulate the empty state, use page.route('**/api/devices') and fulfill a GET with {\"devices\": []} (shape: {devices:[...]}). Nav testids: nav-overview (only shown when >1 device), nav-chambers, nav-data, nav-settings. In Playwright scripts, use an async def dialog handler (asyncio is not imported in the tool sandbox). No client users exist by default; create them via POST /api/users with an Origin header."
+}

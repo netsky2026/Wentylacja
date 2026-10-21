@@ -242,10 +242,10 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
             <span className={`led ${brokerConnected ? "ok" : "warn pulse"}`} />
             {brokerConnected ? t.brokerConnected : t.brokerDisconnected}
           </span>
-          <span className="flex items-center gap-2" data-testid="device-online" style={{ fontSize: 12, color: online ? "var(--green)" : "var(--muted)" }}>
+          {devices?.length > 0 && <span className="flex items-center gap-2" data-testid="device-online" style={{ fontSize: 12, color: online ? "var(--green)" : "var(--muted)" }}>
             <span className={`led ${online ? "ok" : "warn"}`} />
             {online ? t.deviceOnline : t.deviceOffline}
-          </span>
+          </span>}
         </div>}
 
         {(view === "chambers" || view === "data") && chambers.length > 0 && (
