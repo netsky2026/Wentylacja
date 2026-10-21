@@ -29,6 +29,7 @@ from typing import Any, Optional, List
 
 import paho.mqtt.client as mqtt
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 from cryptography.fernet import Fernet, InvalidToken
 from pydantic import BaseModel, Field
 
@@ -722,6 +723,8 @@ async def lifespan(app: FastAPI):
     await migrate_legacy()
     await migrate_slugs()
     await db.clients.create_index("slug", unique=True, partialFilterExpression={"slug": {"$type": "string"}})
+    await db.cycles.create_index([("device_id", 1), ("chamber", 1)], unique=True, name="one_active_cycle",
+                                 partialFilterExpression={"active": True})
     await load_broker()
     await load_registry()
     await db.plc_history.create_index([("device_id", 1), ("ts", 1)])
@@ -1311,12 +1314,14 @@ async def usage_daily(device_id: str, days: int = 7, user: dict = Depends(requir
         {"$group": {"_id": {"$substr": ["$ts", 0, 10]}, "p": {"$sum": "$power_kw"}, "w": {"$sum": "$water_lpm"}}},
     ]).to_list(100)
     by = {r["_id"]: r for r in rows}
+    meters = {m["day"]: m async for m in db.meter_daily.find({"device_id": device_id, "day": {"$gte": start.isoformat()}})}
     out = []
     for i in range(days):
         day = (start + timedelta(days=i)).isoformat()
         r = by.get(day, {"p": 0, "w": 0})
-        out.append({"date": day, "kwh": round(r["p"] * SAMPLE_S / 3600, 2),
-                    "water_m3": round(r["w"] * SAMPLE_S / 60 / 1000, 3)})
+        m = meters.get(day)
+        out.append({"date": day, "kwh": round(m.get("kwh", 0), 2) if m else round(r["p"] * SAMPLE_S / 3600, 2),
+                    "water_m3": round(sum(m.get("water", {}).values()) / 1000, 3) if m else round(r["w"] * SAMPLE_S / 60 / 1000, 3)})
     return {"days": out}
 
 
@@ -1415,9 +1420,12 @@ async def start_cycle(device_id: str, chamber: int, body: CycleIn, user: dict = 
         raise HTTPException(422, "start date in the future")
     if await db.cycles.find_one({"device_id": device_id, "chamber": chamber, "end": None}):
         raise HTTPException(409, "active cycle exists")
-    doc = {"device_id": device_id, "chamber": chamber, "start": start, "end": None, "animals": body.animals,
+    doc = {"device_id": device_id, "chamber": chamber, "start": start, "end": None, "active": True, "animals": body.animals,
            "started_by": user["email"], "created_at": now_iso()}
-    await db.cycles.insert_one(doc)
+    try:
+        await db.cycles.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(409, "active cycle exists")
     await log_event("info", f"{d['name']} – {ch_name(device_id, chamber)}: nowe wstawienie {start}"
                     + (f", {body.animals} szt." if body.animals is not None else "") + f" ({user['email']})",
                     {"user": user["email"]}, device_id)
@@ -1437,7 +1445,7 @@ async def end_cycle(device_id: str, cycle_id: str, body: CycleEndIn, user: dict 
     end = parse_day(body.end) if body.end else local_day()
     if end < c["start"] or end > local_day():
         raise HTTPException(422, "invalid end date")
-    await db.cycles.update_one({"_id": c["_id"]}, {"$set": {"end": end, "ended_by": user["email"]}})
+    await db.cycles.update_one({"_id": c["_id"]}, {"$set": {"end": end, "ended_by": user["email"]}, "$unset": {"active": ""}})
     c.update(end=end, ended_by=user["email"])
     v = await cycle_view(c)
     await log_event("info", f"{d['name']} – {ch_name(device_id, c['chamber'])}: koniec chowu {c['start']} – {end}, "

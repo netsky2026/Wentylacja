@@ -1,13 +1,13 @@
 import { chName } from "@/api";
 import { UsageRangeCard } from "@/components/UsageRangeCard";
-import { useState } from "react";
+import { useState, memo, useMemo } from "react";
 import { Zap, Droplet } from "lucide-react";
 import { DailyUsage, CsvExport } from "@/components/UsageExport";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-const Chart = ({ title, data, lines, testid, t, domain = ["auto", "auto"] }) => (
+const ChartView = ({ title, data, lines, testid, t, domain = ["auto", "auto"] }) => (
   <div className="panel panel-pad" data-testid={testid}>
     <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{title}</div>
     {data.length < 2 ? (
@@ -29,6 +29,7 @@ const Chart = ({ title, data, lines, testid, t, domain = ["auto", "auto"] }) => 
     )}
   </div>
 );
+const Chart = memo(ChartView, (a, b) => a.data === b.data && a.title === b.title && a.t === b.t);
 
 const PlantTile = ({ plant, t }) => {
   const Cell = ({ icon, label, value, unit, sub, testid }) => (
@@ -89,10 +90,11 @@ const EventLog = ({ t, events }) => {
 };
 
 export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events, dev }) => {
-  const data = (history[String(ch?.id)] || []).map((d) => ({
+  const raw = history[String(ch?.id)];
+  const data = useMemo(() => (raw || []).map((d) => ({
     ...d, cl_closed: d.curtain_left == null ? null : 100 - d.curtain_left,
     cr_closed: d.curtain_right == null ? null : 100 - d.curtain_right,
-  }));
+  })), [raw]);
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="data-view">
       {plant && <PlantTile plant={plant} t={t} />}

@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 24: per-chamber water meters, usage date-range (+xlsx), rearing cycles (Nowe wstawienie / Zakończ chów / history). Backend pytest 9/9 pass (state water fields, range structure + growth over 35s, 422 on invalid dates, other-farm 404, xlsx sheets Podsumowanie/Dni with chamber names, cycle start/409/422 future/404 bad chamber/403 viewer/list with days+water+kwh/end/409 re-end/events text). Frontend at 390x844: cycle card with water l/min, form defaults to today, cancel, save -> active card (Od 2026-10-01 · dzień 21, 420 szt., water m³, Wpisał(a) email), end with confirm -> history row; viewer sees no cycle-new/cycle-end but sees active cycle + history toggle. Dane tab: range-from=2026-10-01 / range-to=today defaults, range-show displays kWh, total water and 6 rows using custom chamber name ('Porodówka TEST'), range-xlsx href returns 200 xlsx with correct filename; Dane events log contains 'nowe wstawienie' and 'koniec chowu'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/devices/{id}/chambers/{ch}/cycles", "issue": "Single-active-cycle check is find_one-then-insert (no unique partial index on device_id+chamber where end=null) - two concurrent POSTs could create two active cycles. Low risk."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dane tab (pre-existing, made heavier by new card)", "issues": ["Main thread nearly saturated on Dane view (~3.3s of long tasks per 3s; evaluate roundtrip 0.8-2.5s vs 0.01s on Komory). Playwright native clicks time out there; JS clicks work. Cause: DataView re-renders 5 Recharts charts (3h history) on every WS state tick with no memoization. Suggest React.memo on Chart / useMemo for data, or throttle history updates. Partially amplified by preview instrumentation, but worth fixing for low-end phones."]},
+      {"screen": "CycleCard / UsageRangeCard", "issues": ["Native <input type=date> used (browser default picker) instead of shadcn calendar - acceptable on mobile PWA but inconsistent with design guideline", "'Zużycie dzienne (7 dni)' chart shows ~33 kWh / ~5.7 m³ today while the new range card shows 0.74 kWh / 0.10 m³ for the same month - different data sources (range only accumulates since meter sampler started today). Expected now, but users may be confused until data accrues."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration24_cycles_usage.py", "/app/test_reports/pytest/pytest_iteration24.xml"],
+  "action_items": [
+    "Optional: memoize DataView charts to fix Dane tab main-thread saturation",
+    "Optional: add unique partial index on cycles {device_id, chamber} where end:null to prevent duplicate active cycles under race"
+  ],
+  "critical_code_review_comments": [
+    "cycle_view kwh is whole-plant power over the cycle period (labelled 'Prąd (cała chlewnia)') - correct per user choice of one plant meter",
+    "accumulate_meters ignores negative deltas (meter reset) and jumps > METER_MAX_STEP - good; first sample after restart only seeds meter_last",
+    "Pre-existing cycle on chlodnia-01 chamber 0 (start 2026-10-21, 500 szt., started_by admin@chlewnia.pl) was present in DB before testing - likely main agent's manual test; left untouched"
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration24_cycles_usage.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary users ui24_operator/ui24_viewer and test_<tag>_* created then deleted; temporary cycles deleted from Mongo cycles; chamber 1 of kowalski-a renamed to 'Porodówka TEST' for the test and reset to default.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Server date is 2026-10-21 (Warsaw). On Dane tab use JS-dispatched clicks (page.evaluate el.click()) - native Playwright clicks hang due to busy main thread. Test file deletes all kowalski-a chamber 0 cycles at start. Welcome page needs welcome-login-button first."
+}
