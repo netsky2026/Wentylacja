@@ -54,16 +54,14 @@
   --nav-bg: rgba(20,21,24,0.9); --thumb: #34383d;
 }
 [data-theme="forest"] {
-  --bg: #2E9A3E; --card: #0E3D18; --border: #1E6B2C; --text: #FFFFFF; --muted: #C8EBCE;
+  --bg: #050F07; --card: #0E3D18; --border: #1E6B2C; --text: #FFFFFF; --muted: #C8EBCE;
   --primary: #E2FF7A; --primary-rgb: 226,255,122; --on-primary: #0E3D18; --primary-text: #f4ffd0;
   --accent: #FF5A5A; --green: #E2FF7A;
   --surface: #0A2E12; --surface2: #1A5A26; --grid: #1d5a29; --axis: #b9e3c0; --off: #3f7a4a; --frame: #8fd19a;
   --nav-bg: rgba(10,46,18,0.94); --glass: linear-gradient(160deg, #1f6e2e 0%, #155523 100%); --thumb: #1f6b2d;
   --warn-text: #FFE08A; --warn-bg: rgba(255,224,138,0.14); --warn-border: rgba(255,224,138,0.45);
 }
-[data-theme="forest"] .panel { box-shadow: 0 6px 22px rgba(6,40,14,0.35); text-shadow: none; }
-[data-theme="forest"] .mobile-wrap, [data-theme="forest"] .login-wrap { text-shadow: 0 1px 3px rgba(4,36,10,0.6); }
-[data-theme="forest"] body { background: linear-gradient(180deg, #6BCB4F 0%, #3FAE47 35%, #2E9A3E 75%, #268A36 100%) fixed; }
+[data-theme="forest"] .panel { box-shadow: 0 6px 22px rgba(0,0,0,0.45); }
 [data-theme="lightblue"] {
   --bg: #F2F5F9; --card: #FFFFFF; --border: #D3DCE7; --text: #0F172A; --muted: #556275;
   --primary: #1D5FD1; --primary-rgb: 29,95,209; --on-primary: #FFFFFF; --primary-text: #12397f;
