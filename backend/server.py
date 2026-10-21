@@ -830,9 +830,7 @@ async def patch_client(client_id: str, body: ClientPatch, user: dict = Depends(r
     return {"ok": True}
 
 
-@api.post("/clients/{client_id}/logo")
-async def upload_logo(client_id: str, file: UploadFile = File(...), user: dict = Depends(require("superadmin"))):
-    c = await client_or_404(client_id)
+async def store_logo(file: UploadFile, folder: str) -> tuple:
     data = await file.read(1_000_001)
     if len(data) > 1_000_000:
         raise HTTPException(413, "Logo too large (max 1 MB)")
@@ -846,9 +844,15 @@ async def upload_logo(client_id: str, file: UploadFile = File(...), user: dict =
         img.save(buf, "PNG")
     except Exception:
         raise HTTPException(422, "Unsupported image (PNG, JPEG or WEBP)")
-    res = await asyncio.to_thread(put_object, f"{STORAGE_APP}/logos/{client_id}/{uuid.uuid4().hex}.png", buf.getvalue())
-    version = uuid.uuid4().hex[:8]
-    await db.clients.update_one({"_id": c["_id"]}, {"$set": {"logo_path": res["path"], "logo_version": version}})
+    res = await asyncio.to_thread(put_object, f"{STORAGE_APP}/logos/{folder}/{uuid.uuid4().hex}.png", buf.getvalue())
+    return res["path"], uuid.uuid4().hex[:8]
+
+
+@api.post("/clients/{client_id}/logo")
+async def upload_logo(client_id: str, file: UploadFile = File(...), user: dict = Depends(require("superadmin"))):
+    c = await client_or_404(client_id)
+    path, version = await store_logo(file, client_id)
+    await db.clients.update_one({"_id": c["_id"]}, {"$set": {"logo_path": path, "logo_version": version}})
     return {"ok": True, "logo_version": version}
 
 
@@ -915,13 +919,29 @@ async def public_manifest(slug: str):
     name = c.get("display_name") or "Marco Polo Wentylacja"
     v = c.get("logo_version")
     icons = ([{"src": f"/api/public/logo/{slug}?size={s}&v={v}", "sizes": f"{s}x{s}", "type": "image/png", "purpose": "any"}
-              for s in (192, 512)] if c.get("logo_path") else
-             [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"}, {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"}])
-    bg = THEME_BG.get(c.get("theme", "green"), "#0A0A0A")
-    return JSONResponse({"id": f"/?klient={slug}", "name": name, "short_name": name, "lang": "pl",
-                         "start_url": f"/?klient={slug}", "scope": "/", "display": "standalone", "orientation": "portrait",
-                         "background_color": bg, "theme_color": bg, "icons": icons},
-                        media_type="application/manifest+json")
+              for s in (192, 512)] if c.get("logo_path") else await site_icons())
+    return manifest(name, f"/?klient={slug}", THEME_BG.get(c.get("theme", "green"), "#0A0A0A"), icons)
+
+
+def manifest(name: str, start: str, bg: str, icons: list) -> JSONResponse:
+    return JSONResponse({"id": start, "name": name, "short_name": name, "lang": "pl", "start_url": start, "scope": "/",
+                         "display": "standalone", "orientation": "portrait", "background_color": bg, "theme_color": bg,
+                         "icons": icons}, media_type="application/manifest+json")
+
+
+async def site_icons() -> list:
+    doc = await db.site_settings.find_one({"_id": "main"}) or {}
+    if doc.get("logo_path"):
+        return [{"src": f"/api/public/site/logo?size={s}&v={doc['logo_version']}", "sizes": f"{s}x{s}", "type": "image/png",
+                 "purpose": "any"} for s in (192, 512)]
+    return [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]
+
+
+@api.get("/public/manifest")
+async def public_site_manifest():
+    return manifest("Marco Polo Wentylacja", "/", "#0A0A0A", await site_icons())
 
 
 class SiteIn(BaseModel):
@@ -932,7 +952,32 @@ class SiteIn(BaseModel):
 @api.get("/public/site")
 async def public_site():
     doc = await db.site_settings.find_one({"_id": "main"}) or {}
-    return {"phone": doc.get("phone", ""), "email": doc.get("email", "")}
+    return {"phone": doc.get("phone", ""), "email": doc.get("email", ""),
+            "logo_version": doc.get("logo_version") if doc.get("logo_path") else None}
+
+
+@api.get("/public/site/logo")
+async def public_site_logo(size: int = 0):
+    doc = await db.site_settings.find_one({"_id": "main"}) or {}
+    if not doc.get("logo_path"):
+        raise HTTPException(404, "No logo")
+    data = await asyncio.to_thread(get_object, doc["logo_path"])
+    if size in (32, 180, 192, 512):
+        data = await asyncio.to_thread(_square_icon, data, size, "#0A0A0A")
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@api.post("/site/logo")
+async def upload_site_logo(file: UploadFile = File(...), user: dict = Depends(require("superadmin"))):
+    path, version = await store_logo(file, "site")
+    await db.site_settings.update_one({"_id": "main"}, {"$set": {"logo_path": path, "logo_version": version}}, upsert=True)
+    return {"ok": True, "logo_version": version}
+
+
+@api.delete("/site/logo")
+async def delete_site_logo(user: dict = Depends(require("superadmin"))):
+    await db.site_settings.update_one({"_id": "main"}, {"$unset": {"logo_path": "", "logo_version": ""}})
+    return {"ok": True}
 
 
 @api.put("/site")

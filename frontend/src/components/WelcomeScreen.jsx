@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
 import { LogIn, Phone, Mail, Thermometer, Droplets, Wind } from "lucide-react";
-import { API } from "@/api";
+import { siteLogoUrl } from "@/api";
 
 const Contact = ({ site }) => {
   if (!site?.phone && !site?.email) return null;
@@ -13,9 +11,7 @@ const Contact = ({ site }) => {
   );
 };
 
-export const WelcomeScreen = ({ t, lang, setLang, onLogin }) => {
-  const [site, setSite] = useState(null);
-  useEffect(() => { axios.get(`${API}/public/site`).then(({ data }) => setSite(data)).catch(() => {}); }, []);
+export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
   const pills = [[Thermometer, t.welcomeTemp], [Droplets, t.humidity], [Wind, "CO₂"]];
   return (
     <div className="welcome-page" data-testid="welcome-page-container">
@@ -23,7 +19,7 @@ export const WelcomeScreen = ({ t, lang, setLang, onLogin }) => {
       <div className="welcome-content">
         <header className="flex items-center justify-between welcome-rise">
           <div className="flex items-center gap-3">
-            <img src="/icon-192.png" alt="" data-testid="welcome-brand-logo" style={{ width: 44, height: 44, borderRadius: 12 }} />
+            <img src={siteLogoUrl(site)} alt="" data-testid="welcome-brand-logo" style={{ width: 44, height: 44, borderRadius: 12, objectFit: "contain" }} />
             <span className="font-head" style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>Fatek · MQTT</span>
           </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>

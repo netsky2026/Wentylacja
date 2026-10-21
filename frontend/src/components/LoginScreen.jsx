@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { LogIn, ArrowLeft } from "lucide-react";
-import { API, formatApiError } from "@/api";
+import { API, formatApiError, siteLogoUrl } from "@/api";
 
-export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack }) => {
+export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack, site }) => {
   useEffect(() => {
     if (brand?.theme && !localStorage.getItem("theme_user")) document.documentElement.dataset.theme = brand.theme;
   }, [brand]);
-  const logo = brand?.logo_version ? `${API}/public/logo/${brand.slug}?v=${brand.logo_version}` : "/icon-192.png";
+  const logo = brand?.logo_version ? `${API}/public/logo/${brand.slug}?v=${brand.logo_version}` : siteLogoUrl(site);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");

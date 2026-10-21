@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
 import { I18N } from "@/i18n";
-import { API, refreshSession, setOnAuthLost } from "@/api";
+import { API, refreshSession, setOnAuthLost, siteLogoUrl } from "@/api";
 import { LoginScreen } from "@/components/LoginScreen";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { OverviewView } from "@/components/OverviewView";
@@ -36,11 +36,25 @@ const usePublicBrand = () => {
   return pb;
 };
 
+const useSite = () => {
+  const [site, setSite] = useState(null);
+  const load = useCallback(() => axios.get(`${API}/public/site`).then(({ data }) => {
+    setSite(data);
+    if (localStorage.getItem("brand_slug") || !data.logo_version) return;
+    setHeadLink('link[rel="manifest"]', "href", `${API}/public/manifest?v=${data.logo_version}`);
+    setHeadLink('link[rel="apple-touch-icon"]', "href", siteLogoUrl(data, 180));
+    setHeadLink('link[rel="icon"]', "href", siteLogoUrl(data, 32));
+  }).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  return [site, load];
+};
+
 export default function App() {
   const [lang, setLang] = useState(() => localStorage.getItem("lang") || "pl");
   const [user, setUser] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const publicBrand = usePublicBrand();
+  const [site, reloadSite] = useSite();
   const t = I18N[lang];
   const changeLang = (l) => { setLang(l); localStorage.setItem("lang", l); };
   useEffect(() => {
@@ -55,16 +69,16 @@ export default function App() {
   };
   if (user === null) return <div className="app-shell" data-testid="auth-loading" />;
   if (user === false && !showLogin && !localStorage.getItem("brand_slug")) {
-    return <WelcomeScreen t={t} lang={lang} setLang={changeLang} onLogin={() => setShowLogin(true)} />;
+    return <WelcomeScreen t={t} site={site} lang={lang} setLang={changeLang} onLogin={() => setShowLogin(true)} />;
   }
   if (user === false) {
-    return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} brand={publicBrand}
+    return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} brand={publicBrand} site={site}
       onBack={localStorage.getItem("brand_slug") ? undefined : () => setShowLogin(false)} /><Toaster theme="dark" position="top-center" /></>;
   }
-  return <Dashboard t={t} lang={lang} setLang={changeLang} user={user} onLogout={logout} onUserChange={setUser} />;
+  return <Dashboard t={t} lang={lang} setLang={changeLang} user={user} onLogout={logout} onUserChange={setUser} site={site} reloadSite={reloadSite} />;
 }
 
-function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
+function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloadSite }) {
   const [brand, setBrand] = useState({ client_id: null, app_name: null, theme: null, logo_version: null, loaded: false });
   const canControl = ["operator", "admin", "superadmin"].includes(user.role);
   const [view, setView] = useState("chambers");
@@ -202,7 +216,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
       <div className="mobile-wrap">
         <header className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-            <img src={brand.logo_version ? `${API}/clients/${brand.client_id}/logo?v=${brand.logo_version}` : "/icon-192.png"}
+            <img src={brand.logo_version ? `${API}/clients/${brand.client_id}/logo?v=${brand.logo_version}` : siteLogoUrl(site)}
               alt="" data-testid="app-logo" style={{ width: 28, height: 28, borderRadius: 7, objectFit: "contain" }} />
             <span className="font-head" data-testid="app-title" style={{ fontSize: 20, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {brand.app_name || t.appName}</span>
@@ -245,7 +259,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
           <SettingsView t={t} chambers={chambers} thresholds={thresholds} send={send} saveThreshold={saveThreshold}
             notifPerm={notifPerm} requestNotif={requestNotif} config={config} onConfigSaved={setConfig}
             user={user} onLogout={onLogout} canControl={canControl} dev={dev} reloadDevices={() => { loadDevices(); loadBrand(); }}
-            onUserChange={onUserChange} clientTheme={brand.theme} />
+            onUserChange={onUserChange} clientTheme={brand.theme} site={site} reloadSite={reloadSite} />
         ) : chambers.length === 0 ? (
           <div className="panel panel-pad" style={{ color: "var(--muted)", textAlign: "center", fontSize: 13 }}>{dev ? t.waitingData : "…"}</div>
         ) : view === "chambers" ? (

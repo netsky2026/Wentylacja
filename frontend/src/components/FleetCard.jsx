@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload } from "lucide-react";
-import { API, formatApiError } from "@/api";
+import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload, QrCode } from "lucide-react";
+import { API, formatApiError, siteLogoUrl } from "@/api";
+import { QrDialog } from "@/components/QrDialog";
 import { ThemeSelect } from "@/components/AccountCards";
 
-const BrandEditor = ({ c, t, onChanged }) => {
+const BrandEditor = ({ c, t, onChanged, site }) => {
+  const [qr, setQr] = useState(false);
   const [name, setName] = useState(c.display_name || "");
   const [slug, setSlug] = useState(c.slug || "");
   const link = c.slug ? `${window.location.origin}/?klient=${c.slug}` : "";
@@ -48,8 +50,11 @@ const BrandEditor = ({ c, t, onChanged }) => {
           <span data-testid={`brand-link-${c.id}`} style={{ wordBreak: "break-all" }}>{link}</span>
           <button className="sp-btn" onClick={() => { navigator.clipboard?.writeText(link); toast.success(t.copied); }}
             data-testid={`brand-link-copy-${c.id}`} aria-label={t.copy}><Copy size={13} /></button>
+          <button className="sp-btn" onClick={() => setQr(true)} data-testid={`brand-qr-${c.id}`} aria-label="QR" style={{ marginLeft: 6 }}><QrCode size={13} /></button>
         </div>
       )}
+      <QrDialog open={qr} onOpenChange={setQr} t={t} link={link} slug={c.slug} name={c.display_name || c.name}
+        logoSrc={c.logo_version ? `${API}/public/logo/${c.slug}?v=${c.logo_version}` : siteLogoUrl(site)} />
       <label className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)" }}>{t.colorTheme}
         <ThemeSelect t={t} value={c.theme} onChange={(theme) => patch({ theme })} testid={`brand-theme-${c.id}`} />
       </label>
@@ -85,7 +90,7 @@ const Creds = ({ c, t, onClose }) => {
   );
 };
 
-export const FleetCard = ({ t, reloadDevices }) => {
+export const FleetCard = ({ t, reloadDevices, site }) => {
   const [clients, setClients] = useState([]);
   const [devices, setDevices] = useState([]);
   const [clientName, setClientName] = useState("");
@@ -141,7 +146,7 @@ export const FleetCard = ({ t, reloadDevices }) => {
               <button className="sp-btn" onClick={() => delClient(c)} data-testid={`client-delete-${c.id}`} aria-label="delete"><Trash2 size={13} /></button>
             </div>
           </div>
-          {brandOpen === c.id && <BrandEditor c={c} t={t} onChanged={refresh} />}
+          {brandOpen === c.id && <BrandEditor c={c} t={t} onChanged={refresh} site={site} />}
           {devices.filter((d) => d.client_id === c.id).map((d) => (
             <div key={d.device_id} className="flex items-center justify-between" style={{ padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 6 }}
               data-testid={`fleet-device-${d.device_id}`}>

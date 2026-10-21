@@ -35,3 +35,6 @@ export const formatApiError = (detail, fallback) => {
   if (typeof detail.msg === "string") return detail.msg;
   return String(detail);
 };
+
+export const siteLogoUrl = (site, size) => site?.logo_version
+  ? `${API}/public/site/logo?${size ? `size=${size}&` : ""}v=${site.logo_version}` : "/icon-192.png";

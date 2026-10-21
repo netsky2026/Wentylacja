@@ -58,7 +58,7 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
 
 
 export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, config, onConfigSaved,
-  user, onLogout, canControl, dev, reloadDevices, onUserChange, clientTheme }) => {
+  user, onLogout, canControl, dev, reloadDevices, onUserChange, clientTheme, site, reloadSite }) => {
   const isAdmin = user.role === "admin" || user.role === "superadmin";
   const clientId = user.role === "superadmin" ? dev?.client_id : undefined;
   return (
@@ -87,9 +87,9 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
         <UsersCard key={`u-${clientId}`} t={t} me={user} clientId={clientId} clientName={dev?.client_name} />
       </>}
       {user.role === "superadmin" && <>
-        <FleetCard t={t} reloadDevices={reloadDevices} />
+        <FleetCard t={t} reloadDevices={reloadDevices} site={site} />
         <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
-        <SiteCard t={t} />
+        <SiteCard t={t} site={site} reloadSite={reloadSite} />
       </>}
       <InstallCard t={t} />
     </div>
