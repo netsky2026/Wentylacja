@@ -654,7 +654,7 @@ async def midnight_auto():
     while True:
         now = datetime.now(PL_TZ)
         nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
-        await asyncio.sleep((nxt - now).total_seconds())
+        await asyncio.sleep((nxt.astimezone(timezone.utc) - now.astimezone(timezone.utc)).total_seconds())
         try:
             await reset_manual_to_auto()
         except Exception as e:

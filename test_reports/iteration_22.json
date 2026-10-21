@@ -1,0 +1,38 @@
+{
+  "summary": "Tested removal of chamber power control, the bigger AUTO/RĘCZNY toggle, the daily 00:00 Europe/Warsaw auto-return to AUTO and the grass contrast fix. Backend: 11/11 pytest pass. chamber_power returns 422 (superadmin and operator). Operator can still use set_setpoint, set_mode and set_vent. Viewer gets 403 on commands. POST /api/admin/auto-reset: 403 for client admin, operator and viewer; 401 without login. Flow for kowalski-a chamber 0: set manual, state shows manual, call auto-reset, chamber back to auto within 10s, event log has 'automatyczny powrót do AUTO (00:00)'. A second call when everything is already auto logs nothing. Frontend at 390x844: no chamber-*-power button and no 'Wyłącz' text. The toggle is 2 columns, 146x56px each, 19px bold, spanning the full card width. The active option is filled with --primary (amber #F59E0B, grass #E2FF7A with dark text). In manual mode, chamber-0-auto-return shows 'Powrót do AUTO o 00:00' and the 3 sliders appear. After switching back to AUTO the hint and sliders are hidden. Grass theme: the title and subtitles outside panels are now dark (#072410 / #0F3D1B). My scan compares against the darkest gradient stop (#268A36), which is stricter than needed, and flags them at 3.76 / 2.8. Against the real background where the text sits (top of the gradient, y<240): app-title about 7.5:1, view subtitles about 5.6:1, login subtitle about 4.6:1 (just above 4.5). So it passes on login, overview, chambers, data and settings. No horizontal overflow (scrollWidth=390). Found a real DST bug in midnight_auto (see critical_code_review_comments).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "midnight_auto (server.py ~653)", "issue": "DST bug. nxt - now uses two datetimes with the same ZoneInfo, so Python subtracts wall-clock time and ignores the UTC offset. Verified: on 2026-10-25 (fall back) it sleeps 24h instead of 25h, so the reset fires at 23:00 the day before and again at 00:00. On 2026-03-29 (spring forward) it fires at 01:00. Fix: sleep for (nxt.timestamp() - now.timestamp()) seconds, or subtract in UTC."},
+      {"endpoint": "POST /api/devices/{id}/command", "issue": "Dead code: the final else-branch ('włączona'/'wyłączona') is unreachable now that CommandIn rejects chamber_power. The simulator still handles chamber_power too. Remove both."},
+      {"endpoint": "reset_manual_to_auto event text", "issue": "Inconsistent label. The auto-reset event uses dev_label() ('Marco Polo / Sterownik 1 – Komora 1'), while command events use d['name'] ('Sterownik 1 – Komora 1')."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Grass login", "issues": ["Login subtitle 'Zaloguj się, aby sterować wentylacją chlewni' (#0F3D1B) is about 4.6:1 at its position, just at the AA limit. Using #072410 (same as the title) would give a safer margin."]},
+      {"screen": "Grass settings", "issues": ["notif-status 'Zablokowane w przeglądarce' (--accent #FF5A5A on the green panel) is 4.04:1. Minor, inside a panel."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration22_auto_reset.py", "/app/test_reports/pytest/pytest_iter22.xml", "/app/tests/contrast_scan45.js"],
+  "action_items": [
+    "Fix DST handling in midnight_auto: compute the sleep from timestamps (UTC), not from aware-datetime subtraction in the same zone.",
+    "Remove the dead chamber_power branch in device_command (and in the simulator if it is not needed).",
+    "Optional: use the same device label in the auto-reset event as in command events.",
+    "Optional: darken the grass login subtitle to #072410 for more margin."
+  ],
+  "critical_code_review_comments": [
+    "midnight_auto only runs while the process is up and has no catch-up. If the backend restarts or is down at 00:00, manual chambers stay manual until the next midnight. With several workers or replicas it would run once per instance (it is idempotent, but logs duplicate events). Consider storing last_reset_date in Mongo and checking it on startup.",
+    "reset_manual_to_auto relies on the in-memory gateway.states and on publish_command returning True. There is no check that the PLC actually applied AUTO and no retry. An offline device with stale 'manual' state gets a publish and an event logged, but may never switch.",
+    "VentControl: the mode buttons are still disabled when ch.on is false (power is PLC-only now). That is OK, but the auto-return hint renders while the sliders are hidden, so the UI gives no reason why the controls are greyed out.",
+    "server.py is well over 700 lines and should be split into modules (gateway/simulator, routes, scheduler)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration22_auto_reset.py", "/app/tests/contrast_scan45.js"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% of requested checks"},
+  "seed_data_creation": "Temporary users test_<tag>_admin/operator/viewer@kowalski.pl were created and deleted. Admin theme was set to grass and restored to orange. Kowalski client theme was set to grass and restored to amber. All chambers on both devices are verified as auto at the end. Note: chlodnia-01 chambers 1 and 2 were switched to manual by someone else during the run, and my final auto-reset returned them to auto. Kowalski chamber 0 setpoint was restored to 20.0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "GET /api/devices returns devices keyed by 'device_id', each with state.chambers[].mode/on. pytest.ini uses xdist with loadscope, so keep the module-scoped fixtures. contrast_scan45.js measures against the worst gradient stop, so text near the top of the grass gradient shows as false positives; check the element's y position against the gradient stops (#6BCB4F 0%, #3FAE47 35%, #2E9A3E 75%, #268A36 100%). Original themes: admin=orange, Kowalski=amber."
+}

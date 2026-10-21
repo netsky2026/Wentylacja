@@ -117,3 +117,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: theme 'sun' = Słoneczny żółty (dark bg, golden cards #3A2F06, yellow primary #FFD60A).
 - 2026-06: themes 'grass' (green app column, dark sides) and 'sun' (yellow app column, dark cards, scoped --text dark outside panels). --app-bg/--status vars; meta theme-color uses --status.
 - 2026-06: theme 'orange' (orange app column, dark brown cards, same scoping as sun).
+- 2026-06: chamber_power removed (API 422, UI button gone); big AUTO/RĘCZNY toggle + 'Powrót do AUTO o 00:00'; midnight_auto task (Europe/Warsaw, DST-safe) + POST /api/admin/auto-reset (superadmin); grass theme dark text outside panels. Tested iteration_22.
