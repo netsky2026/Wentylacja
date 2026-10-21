@@ -36,8 +36,8 @@
 }
 [data-theme="red"] {
   --bg: #0E0909; --card: #181011; --border: #2F1D1F; --text: #F7F1F1; --muted: #A08C8E;
-  --primary: #C8323F; --primary-rgb: 200,50,63; --on-primary: #FFFFFF; --primary-text: #f6d5d8;
-  --accent: #FF6B5E; --green: #34C779;
+  --primary: #EF5B66; --primary-rgb: 239,91,102; --on-primary: #0E0909; --primary-text: #f6d5d8;
+  --accent: #FFB020; --green: #34C779;
   --surface: #120B0C; --surface2: #33201F; --grid: #2a1a1c; --axis: #7d6a6c; --off: #4d3a3c; --frame: #5e4a4c;
   --nav-bg: rgba(20,12,13,0.88); --thumb: #3b2628;
 }

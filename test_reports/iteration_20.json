@@ -1,0 +1,41 @@
+{
+  "summary": "Tested the 4 new themes (red, teal, graphite, lightblue). Backend: 11/11 pytest pass. PUT /api/auth/preferences accepts all 4 new themes plus null and rejects 'purple' with 422. PATCH /api/clients/{id} accepts the new themes and rejects 'purple' with 422. /api/public/branding/kowalski returns the theme, and /api/public/manifest/kowalski returns background_color/theme_color matching THEME_BG (teal=#061010 etc.). Frontend at 390x844: the Settings theme select has 8 themes with Polish labels plus a 'Domyślny klienta (...)' default option. Selecting each new theme sets html[data-theme] and body bg correctly on Settings/Overview/Chambers/Data. No horizontal overflow (scrollWidth=390) in any new theme. Automated contrast scan found no text under 3:1 in any view. Screenshots look correct for teal, graphite (near-white primary with dark text works well) and lightblue (light cards, readable charts). Superadmin palette editor: set Ferma Kowalski to red, branding API changed, and the user default label updated to 'Domyślny klienta (Ciemny bordowy)'. On a fresh device /?klient=kowalski login shows the red theme (submit button rgb(200,50,63) with white text). Restored Kowalski to amber (original) and admin user to blue (original), both verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "backend/auth.py line 164", "issue": "Dead/stale constant THEMES = ('green','light','blue','amber') does not include the new themes. It is unused (the regex at line 168 is what validates), but it is misleading. Remove it or reuse THEME_RX from one shared place (the regex is duplicated in server.py THEME_RX and auth.py)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Red theme (Ciemny bordowy) - all screens", "issues": [
+        "Text drawn in var(--primary) #C8323F has low contrast: 3.55:1 on card #181011 and 3.19:1 on the 14% primary tint. Below WCAG AA 4.5:1 for small text. Affected: active bottom-nav label (.bottom-nav-btn.active, 11px), active lang button PL, QR/SIM buttons in FleetCard (client-qr-*, device-sim-*), active AUTO segment in ventilation mode control, PRACA/AUTO accents. Suggested fix: --primary #EF5B66 (5.67:1 on card, 4.81:1 on tint) with --on-primary #0E0909 (5.99:1). Alternatively keep #C8323F for fills and use a lighter #EF5B66 for primary-coloured text.",
+        "Semantic clash: primary is red and --accent (alarm) #FF6B5E is also red. The alarm/warning panel and alarm states become hard to tell apart from normal active/primary UI. Consider a distinct alarm hue (e.g. orange-yellow #FFB020) for this theme, or document it as accepted."
+      ]},
+      {"screen": "Graphite", "issues": ["Looks fine. Contrast is excellent (on-primary/primary 15:1). The active nav/tab tint (white at 12-14%) is subtle but acceptable."]},
+      {"screen": "Login page (App.js line 78)", "issues": [
+        "Toaster is hardcoded theme='dark' on the login screen, so a client with a light/lightblue brand gets dark toasts on login. Use the same light/lightblue check as line 291. Low impact because login errors are shown inline.",
+        "meta[name=theme-color] stays #0A0A0A on the branded login page (e.g. red brand should be #0E0909). The LoginScreen effect sets data-theme but does not update the meta tag."
+      ]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration20_themes.py", "/app/test_reports/pytest/it20.xml"],
+  "action_items": [
+    "Red theme: lighten primary for text (e.g. --primary #EF5B66, --on-primary #0E0909) to reach 4.5:1 on cards and tints",
+    "Optional: give the red theme a distinct alarm colour so alarms are not confused with primary accents",
+    "LoginScreen: use the light Toaster for light/lightblue brand themes and update meta theme-color when the brand theme is applied",
+    "Remove the stale THEMES tuple in auth.py, or centralise the theme list/regex"
+  ],
+  "critical_code_review_comments": [
+    "Theme regex is duplicated in server.py (THEME_RX) and auth.py (inline pattern). Single-source it to avoid future drift (the stale THEMES tuple shows this has already started)",
+    "Behaviour note: the user's personal theme override (localStorage theme_user) wins over the client brand theme on the branded login page on the same device. This is by design: the admin saw blue on /?klient=kowalski and a fresh device saw red."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration20_themes.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% functional (1 contrast design issue in the red theme)"},
+  "seed_data_creation": "None. Temporarily changed Kowalski theme (amber) and admin theme (blue); both restored and verified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "User theme endpoint is PUT /api/auth/preferences {theme}. GET /api/clients returns {clients:[...]}. Kowalski id 6ad7dcc3261e5ba3c23315b7, original theme amber. Admin original theme blue. Test file test_iteration20_themes.py restores both in fixture teardown."
+}
