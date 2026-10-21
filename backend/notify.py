@@ -17,10 +17,12 @@ def sms_configured() -> bool:
     return bool(os.environ.get("SMSAPI_TOKEN") and os.environ.get("SMSAPI_FROM"))
 
 
-def send_email(to: str, subject: str, body: str):
+def send_email(to: str, subject: str, body: str, attachments: tuple = ()):
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = os.environ["SMTP_FROM"], to, subject
     msg.set_content(body)
+    for name, data in attachments:
+        msg.add_attachment(data, maintype="application", subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=name)
     host, port, ctx = os.environ["SMTP_HOST"], int(os.environ["SMTP_PORT"]), ssl.create_default_context()
     if os.environ.get("SMTP_USE_SSL", "false").lower() == "true":
         smtp = smtplib.SMTP_SSL(host, port, timeout=20, context=ctx)
@@ -43,12 +45,12 @@ def send_sms(to: str, text: str):
         raise RuntimeError(f"SMSAPI error {payload.get('error')}: {payload.get('message')}")
 
 
-def deliver(channel: str, to: str, subject: str, body: str) -> tuple:
+def deliver(channel: str, to: str, subject: str, body: str, attachments: tuple = ()) -> tuple:
     """Returns (status, error) where status is sent | failed | not_configured."""
     if not (email_configured() if channel == "email" else sms_configured()):
         return "not_configured", None
     try:
-        send_email(to, subject, body) if channel == "email" else send_sms(to, f"{subject}: {body}")
+        send_email(to, subject, body, attachments) if channel == "email" else send_sms(to, f"{subject}: {body}")
         return "sent", None
     except Exception as e:
         return "failed", str(e)[:200]

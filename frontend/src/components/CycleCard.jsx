@@ -6,6 +6,19 @@ import { API } from "@/api";
 
 const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Warsaw" });
 const m3 = (l) => (l / 1000).toFixed(2);
+const PerHead = ({ t, c, avg }) => {
+  if (c.water_per_head_l == null) return null;
+  const diff = avg ? Math.round((c.water_per_head_l / avg - 1) * 100) : null;
+  return (
+    <span data-testid={`cycle-per-head-${c.id}`}> · {t.perHead}: <b style={{ color: "var(--text)" }}>{c.water_per_head_l} l</b>
+      {diff != null && <span style={{ color: diff > 10 ? "var(--accent)" : diff < -10 ? "var(--green)" : "var(--muted)" }}> ({diff > 0 ? "+" : ""}{diff}% {t.vsAvg})</span>}
+    </span>
+  );
+};
+const avgOf = (rows) => {
+  const v = rows.map((c) => c.water_per_head_l).filter((x) => x != null);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+};
 
 const StartForm = ({ t, onStart, onCancel }) => {
   const [start, setStart] = useState(today());
@@ -21,18 +34,19 @@ const StartForm = ({ t, onStart, onCancel }) => {
   );
 };
 
-const Past = ({ t, rows }) => (
+const Past = ({ t, rows }) => (<>
+  {avgOf(rows) != null && <div style={{ fontSize: 12, marginTop: 10 }} data-testid="cycle-avg-per-head">{t.avgPerHead}: <b>{avgOf(rows).toFixed(2)} l</b></div>}
   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }} data-testid="cycle-history">
     {rows.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>{t.cycleNoHistory}</div>}
     {rows.map((c) => (
       <div key={c.id} className="reg-cell" style={{ padding: "8px 10px", fontSize: 12 }} data-testid={`cycle-row-${c.id}`}>
         <div style={{ fontWeight: 700 }}>{c.start} – {c.end} · {c.days} {t.cycleDays}{c.animals != null ? ` · ${c.animals} ${t.cyclePcs}` : ""}</div>
-        <div style={{ color: "var(--muted)" }}>{t.water}: {m3(c.water_l)} m³ · {t.powerPlant}: {c.kwh} kWh</div>
+        <div style={{ color: "var(--muted)" }}>{t.water}: {m3(c.water_l)} m³<PerHead t={t} c={c} avg={avgOf(rows.filter((x) => x.id !== c.id))} /> · {t.powerPlant}: {c.kwh} kWh</div>
         <div style={{ color: "var(--muted)", fontSize: 10 }}>{c.started_by}{c.ended_by && c.ended_by !== c.started_by ? ` / ${c.ended_by}` : ""}</div>
       </div>
     ))}
   </div>
-);
+</>);
 
 export const CycleCard = ({ t, ch, deviceId, canEdit }) => {
   const [rows, setRows] = useState([]);
@@ -61,7 +75,7 @@ export const CycleCard = ({ t, ch, deviceId, canEdit }) => {
         <div data-testid="cycle-active">
           <div className="font-head" style={{ fontSize: 17, fontWeight: 700 }}>{t.cycleSince} {active.start} · {t.cycleDay} {active.days}</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-            {active.animals != null && <>{active.animals} {t.cyclePcs} · </>}{t.water}: <b style={{ color: "var(--text)" }} data-testid="cycle-active-water">{m3(active.water_l)} m³</b> · {t.powerPlant}: {active.kwh} kWh</div>
+            {active.animals != null && <>{active.animals} {t.cyclePcs} · </>}{t.water}: <b style={{ color: "var(--text)" }} data-testid="cycle-active-water">{m3(active.water_l)} m³</b><PerHead t={t} c={active} avg={avgOf(rows.filter((c) => c.end))} /> · {t.powerPlant}: {active.kwh} kWh</div>
           <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>{t.cycleBy} {active.started_by}</div>
         </div>
       ) : !form && <div style={{ fontSize: 12, color: "var(--muted)" }}>{t.cycleNone}</div>}

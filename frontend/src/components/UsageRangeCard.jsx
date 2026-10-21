@@ -35,6 +35,8 @@ export const UsageRangeCard = ({ t, dev }) => {
         {res.water_l.map((w, i) => <Row key={i} label={chName(t, dev, i)} value={`${(w / 1000).toFixed(2)} m³`} testid={`range-water-${i}`} />)}
         <a className="action-btn" href={`${API}/devices/${dev.device_id}/usage/range/xlsx?${q}`} data-testid="range-xlsx"
           style={{ width: "100%", padding: 10, marginTop: 10, fontSize: 13, textDecoration: "none", justifyContent: "center" }}><FileSpreadsheet size={15} /> {t.rangeExcel}</a>
+        <a href={`${API}/devices/${dev.device_id}/usage/range/csv?${q}`} data-testid="range-csv"
+          style={{ display: "block", textAlign: "center", marginTop: 8, fontSize: 12, color: "var(--muted)" }}>{t.orCsv}</a>
       </div>}
     </div>
   );

@@ -711,6 +711,7 @@ async def midnight_auto():
         await asyncio.sleep(62 - now.second - now.microsecond / 1e6)
         try:
             await reset_manual_to_auto(datetime.now(PL_TZ).strftime("%H:%M"))
+            await monthly_tick()
         except Exception as e:
             logger.error("midnight auto reset failed: %s", e)
 
@@ -1349,40 +1350,124 @@ async def usage_range(device_id: str, start: str, end: str, user: dict = Depends
     return await usage_between(device_id, a, b)
 
 
-@api.get("/devices/{device_id}/usage/range/xlsx")
-async def usage_range_xlsx(device_id: str, start: str, end: str, user: dict = Depends(require("viewer"))):
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def xlsx_bytes(sheets: list) -> bytes:
+    """sheets: [(title, rows, col_widths)] – first row of each sheet is bold header."""
     from openpyxl import Workbook
     from openpyxl.styles import Font
+    wb = Workbook()
+    wb.remove(wb.active)
+    for title, rows, widths in sheets:
+        ws = wb.create_sheet(title)
+        for r in rows:
+            ws.append(r)
+        for c in ws[1] if rows else []:
+            c.font = Font(bold=True)
+        for col, w in widths.items():
+            ws.column_dimensions[col].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def usage_xlsx(device_id: str, a: str, b: str) -> bytes:
+    d = DEVICES[device_id]
+    u = await usage_between(device_id, a, b)
+    names = [ch_name(device_id, i) for i in range(d["chambers"])]
+    summary = [[f"{d['client_name']} – {d['name']}", f"{a} – {b}", ""], ["Pozycja", "Zużycie", "Jednostka"],
+               ["Prąd (cała chlewnia)", u["kwh"], "kWh"], ["Woda razem", round(u["water_total_l"] / 1000, 3), "m³"]]
+    summary += [[f"Woda – {nm}", round(w / 1000, 3), "m³"] for nm, w in zip(names, u["water_l"])]
+    days = [["Dzień", "Prąd kWh"] + [f"Woda {nm} m³" for nm in names]]
+    days += [[r["day"], r["kwh"]] + [round(w / 1000, 3) for w in r["water_l"]] for r in u["days"]]
+    return xlsx_bytes([("Podsumowanie", summary, {"A": 34, "B": 24}), ("Dni", days, {"A": 14})])
+
+
+def file_response(data: bytes, fname: str, mime: str) -> Response:
+    return Response(content=data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@api.get("/devices/{device_id}/usage/range/xlsx")
+async def usage_range_xlsx(device_id: str, start: str, end: str, user: dict = Depends(require("viewer"))):
+    device_or_404(user, device_id)
+    a, b = range_or_422(start, end)
+    return file_response(await usage_xlsx(device_id, a, b), f"zuzycie_{device_id}_{a}_{b}.xlsx", XLSX_MIME)
+
+
+@api.get("/devices/{device_id}/usage/range/csv")
+async def usage_range_csv(device_id: str, start: str, end: str, user: dict = Depends(require("viewer"))):
     d = device_or_404(user, device_id)
     a, b = range_or_422(start, end)
     u = await usage_between(device_id, a, b)
-    names = [ch_name(device_id, i) for i in range(d["chambers"])]
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Podsumowanie"
-    ws.append([f"{d['client_name']} – {d['name']}"])
-    ws.append(["Okres", f"{a} – {b}"])
-    ws.append([])
-    ws.append(["Pozycja", "Zużycie", "Jednostka"])
-    ws.append(["Prąd (cała chlewnia)", u["kwh"], "kWh"])
-    ws.append(["Woda razem", round(u["water_total_l"] / 1000, 3), "m³"])
-    for nm, w in zip(names, u["water_l"]):
-        ws.append([f"Woda – {nm}", round(w / 1000, 3), "m³"])
-    for c in (ws["A1"], ws["A4"], ws["B4"], ws["C4"]):
-        c.font = Font(bold=True)
-    ws.column_dimensions["A"].width = 34
-    ws.column_dimensions["B"].width = 16
-    ws2 = wb.create_sheet("Dni")
-    ws2.append(["Dzień", "Prąd kWh"] + [f"Woda {nm} m³" for nm in names])
-    for r in u["days"]:
-        ws2.append([r["day"], r["kwh"]] + [round(w / 1000, 3) for w in r["water_l"]])
-    for c in ws2[1]:
-        c.font = Font(bold=True)
-    ws2.column_dimensions["A"].width = 14
-    buf = io.BytesIO()
-    wb.save(buf)
-    return Response(content=buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    headers={"Content-Disposition": f'attachment; filename="zuzycie_{device_id}_{a}_{b}.xlsx"'})
+    names = [ch_name(device_id, i).replace(";", " ") for i in range(d["chambers"])]
+    lines = [";".join(["dzien", "prad_kWh"] + [f"woda_{nm}_m3" for nm in names])]
+    lines += [";".join([r["day"], str(r["kwh"]).replace(".", ",")] + [str(round(w / 1000, 3)).replace(".", ",") for w in r["water_l"]])
+              for r in u["days"]]
+    lines.append(";".join(["RAZEM", str(u["kwh"]).replace(".", ",")] + [str(round(w / 1000, 3)).replace(".", ",") for w in u["water_l"]]))
+    return file_response(("\ufeff" + "\n".join(lines) + "\n").encode(), f"zuzycie_{device_id}_{a}_{b}.csv", "text/csv; charset=utf-8")
+
+
+def prev_month(today: Optional[datetime] = None) -> tuple:
+    first = (today or datetime.now(PL_TZ)).date().replace(day=1)
+    last = first - timedelta(days=1)
+    return last.replace(day=1).isoformat(), last.isoformat()
+
+
+async def send_monthly_report(client_id: str, force: bool = False) -> dict:
+    a, b = prev_month()
+    key = f"{client_id}|{a[:7]}"
+    if not force and await db.monthly_reports.find_one({"_id": key}):
+        return {"skipped": True}
+    devs = [k for k, v in DEVICES.items() if v["client_id"] == client_id]
+    to = [u["email"] async for u in db.users.find({"client_id": client_id, "role": "admin"})]
+    if not devs or not to:
+        return {"sent": 0, "recipients": to}
+    files = tuple((f"zuzycie_{dv}_{a[:7]}.xlsx", await usage_xlsx(dv, a, b)) for dv in devs)
+    name = DEVICES[devs[0]]["client_name"]
+    body = f"Dzień dobry,\n\nw załączniku raport zużycia wody i prądu za okres {a} – {b} ({name}).\n\nMarco Polo Wentylacja"
+    res = []
+    for r in to:
+        res.append(await asyncio.to_thread(notify.deliver, "email", r, f"Raport miesięczny {a[:7]} – {name}", body, files))
+    await db.monthly_reports.update_one({"_id": key}, {"$set": {"ts": now_iso(), "to": to, "status": [x[0] for x in res]}}, upsert=True)
+    await log_event("info", f"Raport miesięczny {a[:7]}: " + ", ".join(f"{e} – {st}" for e, (st, _) in zip(to, res)), {"user": "system"},
+                    client_id=client_id)
+    return {"sent": sum(x[0] == "sent" for x in res), "recipients": to, "status": [x[0] for x in res]}
+
+
+async def monthly_tick():
+    now = datetime.now(PL_TZ)
+    if now.day != 1 or now.strftime("%H:%M") != "06:00":
+        return
+    async for c in db.clients.find({"monthly_report": {"$ne": False}}):
+        try:
+            await send_monthly_report(str(c["_id"]))
+        except Exception as e:
+            logger.error("monthly report failed: %s", e)
+
+
+@api.post("/monthly-report/send")
+async def monthly_report_now(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    return await send_monthly_report(str(c["_id"]), force=True)
+
+
+@api.get("/monthly-report")
+async def monthly_report_get(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    to = [u["email"] async for u in db.users.find({"client_id": str(c["_id"]), "role": "admin"})]
+    return {"enabled": c.get("monthly_report", True), "recipients": to, "period": prev_month()}
+
+
+class MonthlyIn(BaseModel):
+    enabled: bool
+
+
+@api.put("/monthly-report")
+async def monthly_report_put(body: MonthlyIn, client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    await db.clients.update_one({"_id": c["_id"]}, {"$set": {"monthly_report": body.enabled}})
+    return {"enabled": body.enabled}
 
 
 class CycleIn(BaseModel):
@@ -1400,7 +1485,8 @@ async def cycle_view(c: dict) -> dict:
     w = u["water_l"][c["chamber"]] if c["chamber"] < len(u["water_l"]) else 0
     return {"id": str(c["_id"]), "chamber": c["chamber"], "start": c["start"], "end": c.get("end"), "animals": c.get("animals"),
             "days": (datetime.fromisoformat(end) - datetime.fromisoformat(c["start"])).days + 1,
-            "water_l": w, "kwh": u["kwh"], "started_by": c.get("started_by"), "ended_by": c.get("ended_by")}
+            "water_l": w, "water_per_head_l": round(w / c["animals"], 2) if c.get("animals") else None,
+            "kwh": u["kwh"], "started_by": c.get("started_by"), "ended_by": c.get("ended_by")}
 
 
 @api.get("/devices/{device_id}/cycles")
@@ -1451,6 +1537,25 @@ async def end_cycle(device_id: str, cycle_id: str, body: CycleEndIn, user: dict 
     await log_event("info", f"{d['name']} – {ch_name(device_id, c['chamber'])}: koniec chowu {c['start']} – {end}, "
                     f"woda {round(v['water_l'] / 1000, 2)} m³ ({user['email']})", {"user": user["email"]}, device_id)
     return v
+
+
+@api.get("/devices/{device_id}/history/xlsx")
+async def history_xlsx(device_id: str, chamber: int, hours: int = 24, user: dict = Depends(require("viewer"))):
+    d = device_or_404(user, device_id)
+    if not 0 <= chamber < d["chambers"]:
+        raise HTTPException(404, "unknown chamber")
+    hours = max(1, min(24 * 31, hours))
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    rows = [["Czas", "Temperatura °C", "Wilgotność %", "CO₂ ppm", "Kurtyna L zamkn. %", "Kurtyna P zamkn. %", "Komin otw. %"]]
+    async for doc in db.plc_history.find({"device_id": device_id, "chamber": chamber, "ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1):
+        cl, cr = doc.get("curtain_left"), doc.get("curtain_right")
+        rows.append([datetime.fromisoformat(doc["ts"]).astimezone(PL_TZ).strftime("%Y-%m-%d %H:%M:%S"), doc.get("temp"),
+                     doc.get("humidity"), doc.get("co2"), None if cl is None else round(100 - cl, 1),
+                     None if cr is None else round(100 - cr, 1), doc.get("chimney")])
+    title = ch_name(device_id, chamber)[:31].translate(str.maketrans("[]:*?/\\", "       "))
+    fname = f"{device_id}_komora{chamber + 1}_{hours}h_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return file_response(await asyncio.to_thread(xlsx_bytes, [(title, rows, {"A": 20, "B": 15, "C": 14, "D": 10, "E": 18, "F": 18, "G": 13})]),
+                         fname, XLSX_MIME)
 
 
 @api.get("/devices/{device_id}/history/csv")

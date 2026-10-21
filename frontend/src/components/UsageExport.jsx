@@ -43,6 +43,7 @@ export const DailyUsage = ({ t, deviceId }) => {
 
 export const CsvExport = ({ t, ch, deviceId, dev }) => {
   const [hours, setHours] = useState(24);
+  const [fmt, setFmt] = useState("xlsx");
   const opts = [[24, "24 h"], [168, `7 ${t.daysShort}`], [720, `30 ${t.daysShort}`]];
   return (
     <div className="panel panel-pad" data-testid="csv-export">
@@ -56,7 +57,14 @@ export const CsvExport = ({ t, ch, deviceId, dev }) => {
             }}>{label}</button>
         ))}
       </div>
-      <a data-testid="csv-download" className="action-btn" href={`${API}/devices/${deviceId}/history/csv?chamber=${ch.id}&hours=${hours}`}
+      <div className="flex gap-2 mb-3">
+        {[["xlsx", "Excel"], ["csv", "CSV"]].map(([k, label]) => (
+          <button key={k} data-testid={`export-format-${k}`} onClick={() => setFmt(k)} className="font-head"
+            style={{ flex: 1, background: fmt === k ? "rgba(var(--primary-rgb),0.16)" : "transparent", color: fmt === k ? "var(--primary)" : "var(--muted)",
+              border: "1px solid var(--border)", borderRadius: 8, padding: "7px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+        ))}
+      </div>
+      <a data-testid="csv-download" className="action-btn" href={`${API}/devices/${deviceId}/history/${fmt}?chamber=${ch.id}&hours=${hours}`}
         style={{ width: "100%", padding: 10, textDecoration: "none", color: "var(--text)" }}>
         <Download size={15} /> {t.download}
       </a>
