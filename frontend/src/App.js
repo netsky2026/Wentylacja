@@ -170,7 +170,8 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
     if (user.theme) localStorage.setItem("theme_user", "1"); else localStorage.removeItem("theme_user");
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    const css = getComputedStyle(document.documentElement);
+    const bg = (css.getPropertyValue("--status") || css.getPropertyValue("--bg")).trim();
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg);
   }, [theme, user.theme, brand.loaded]);
 
