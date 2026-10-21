@@ -116,3 +116,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: theme 'forest' = Świeża trawa (dark bg #050F07 per user, deep green cards #0E3D18, lime primary #E2FF7A).
 - 2026-06: theme 'sun' = Słoneczny żółty (dark bg, golden cards #3A2F06, yellow primary #FFD60A).
 - 2026-06: themes 'grass' (green app column, dark sides) and 'sun' (yellow app column, dark cards, scoped --text dark outside panels). --app-bg/--status vars; meta theme-color uses --status.
+- 2026-06: theme 'orange' (orange app column, dark brown cards, same scoping as sun).
