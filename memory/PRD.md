@@ -118,3 +118,5 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: themes 'grass' (green app column, dark sides) and 'sun' (yellow app column, dark cards, scoped --text dark outside panels). --app-bg/--status vars; meta theme-color uses --status.
 - 2026-06: theme 'orange' (orange app column, dark brown cards, same scoping as sun).
 - 2026-06: chamber_power removed (API 422, UI button gone); big AUTO/RĘCZNY toggle + 'Powrót do AUTO o 00:00'; midnight_auto task (Europe/Warsaw, DST-safe) + POST /api/admin/auto-reset (superadmin); grass theme dark text outside panels. Tested iteration_22.
+- 2026-06: per-farm auto-return time (clients.auto_return, GET/PUT /api/auto-return, minute ticker), AutoReturnCard. Tested iteration_23.
+- 2026-06: per-chamber water meters (water_total_l/water_lpm optional in state), meter_daily (Warsaw day, $inc deltas from meter_last), cycles collection (start/end/animals/started_by/ended_by, operator+, event log with email), GET usage/range + xlsx (openpyxl), CycleCard on chamber screen, UsageRangeCard in Dane.

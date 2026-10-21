@@ -26,7 +26,7 @@ export const AutoReturnCard = ({ t, clientId, clientName, onSaved }) => {
           {t.autoReturnDaily}
         </label>
         <input type="time" className="num-input" value={time} disabled={!on} onChange={(e) => setTime(e.target.value)}
-          data-testid="auto-return-time" style={{ width: 120, fontSize: 15, opacity: on ? 1 : 0.5 }} />
+          data-testid="auto-return-time" style={{ width: 140, fontSize: 15, opacity: on ? 1 : 0.5 }} />
       </div>
       <button className="action-btn" onClick={save} data-testid="auto-return-save" style={{ width: "100%", padding: 9, marginTop: 10, fontSize: 13 }}>{t.save}</button>
     </div>

@@ -1,0 +1,22 @@
+{
+  "summary": "Per-farm auto-return time (Własna Godzina Powrotu). Backend: 14/14 pytest pass: default 00:00; PUT 06:30 persists and shows in GET /api/devices auto_return for kowalski-a while Marco Polo stays 00:00; PUT '' disables; 25:00/6:30/12:60/abc/06:30:00/' 06:30' -> 422; superadmin with no client_id -> 422; client admin sets own farm, and a client_id pointing at another farm is ignored (own farm is updated, Marco Polo unchanged); operator/viewer -> 403; unauthenticated -> 401. REAL scheduler run: set Kowalski to the next Warsaw minute and put kowalski-a ch1 and chlodnia-01 ch1 in manual. kowalski-a returned to auto and the event 'automatyczny powrót do AUTO (HH:MM)' was logged. Marco Polo stayed manual and was then set back to auto. Frontend at 390x844: auto-return-card shows for superadmin with Kowalski selected and the farm name in its title; save gives toast 'Zapisano'; the chamber hint shows 'Powrót do AUTO o 05:45' in manual and updates after a save or page reload (07:00); the time input is disabled when the checkbox is off; when disabled there is no hint in manual; the hint is hidden in auto mode. State restored: both farms 00:00, all chambers auto, test users deleted.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [{"screen": "Settings AutoReturnCard (390px)", "issues": ["The time input is 120px wide. In browsers with a 12h locale (headless en-US) it shows '05:45 AM' and the leading digit is clipped. Polish locale uses 24h, so the impact is low; consider width ~140px or minWidth"]}]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration23_auto_return.py", "/app/test_reports/pytest/pytest_it23.xml"],
+  "action_items": ["Optional: widen the auto-return-time input to avoid clipping in 12h locales"],
+  "critical_code_review_comments": [
+    "midnight_auto sleeps until about second 2 of each minute and checks only the current HH:MM. If the loop stalls for more than 60s, or the backend restarts during the target minute, that day's return is silently skipped. No catch-up exists (acceptable for MVP).",
+    "A client admin passing another farm's client_id gets 200 and updates their own farm. This is safe but silent; 403 might be clearer.",
+    "reset_manual_to_auto logs an event only when publish_command succeeds, so offline devices are not logged. A failed publish is never retried later that day."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration23_auto_return.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary test_<tag>_{admin,operator,viewer}@kowalski.pl users were created and deleted by the fixture",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Landing page requires clicking welcome-login-button before the login form. Superadmin selects a device with device-select (value=device_id). The scheduler test takes about 60-120s. Event message text is in events[].message. Restore auto_return to 00:00 for both clients after tests."
+}

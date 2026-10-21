@@ -2,6 +2,7 @@ import { Thermometer, Droplets, Wind, Flame, AlertTriangle, Target } from "lucid
 import { CurtainWindow, ChimneyGauge } from "@/components/Gauges";
 import { VentControl } from "@/components/VentControl";
 import { ChamberNameEdit } from "@/components/ChamberNameEdit";
+import { CycleCard } from "@/components/CycleCard";
 
 const Sensor = ({ icon, label, value, unit, warn, testid }) => (
   <div className="sensor" data-testid={testid}>
@@ -56,6 +57,8 @@ export const ChamberScreen = ({ ch, t, send, canControl, dev, canRename, onRenam
       </div>
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", marginTop: 8 }}>{t.curtainHint}</div>
     </div>
+
+    {dev && <CycleCard t={t} ch={ch} deviceId={dev.device_id} canEdit={canControl} />}
 
     {canControl && <VentControl ch={ch} t={t} send={send} autoReturn={dev?.auto_return} />}
   </div>

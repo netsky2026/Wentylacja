@@ -136,7 +136,8 @@ class PiggerySimulator:
                 "id": i, "temp": round(sp + rnd.uniform(-1.5, 2.0), 1), "setpoint": sp, "humidity": 65.0 + rnd.uniform(0, 8),
                 "co2": 900.0 + rnd.uniform(0, 400), "on": True, "heating": False, "mode": "auto",
                 "curtain_left": 30.0, "curtain_right": 30.0, "chimney": 40.0,
-                "manual": {"curtain_left": 30.0, "curtain_right": 30.0, "chimney": 40.0}})
+                "manual": {"curtain_left": 30.0, "curtain_right": 30.0, "chimney": 40.0},
+                "water_lpm": 0.0, "water_total_l": round(rnd.uniform(500, 3000), 1)})
         self.plant = {"power_kw": 0.0, "power_kwh": round(rnd.uniform(50, 200), 1), "water_lpm": 0.0,
                       "water_total_l": round(rnd.uniform(2000, 8000), 1)}
         self._stop = threading.Event()
@@ -221,7 +222,10 @@ class PiggerySimulator:
         power = max(0.0, 1.2 + fans * 2.5 + heat * 3.0 + random.uniform(-0.2, 0.2))
         self.plant["power_kw"] = round(power, 2)
         self.plant["power_kwh"] = round(self.plant["power_kwh"] + power / 3600.0, 3)
-        lpm = sum(1 for ch in self.chambers if ch["on"]) * random.uniform(0.6, 2.2)
+        for ch in self.chambers:
+            ch["water_lpm"] = round(random.uniform(0.6, 2.2), 2) if ch["on"] else 0.0
+            ch["water_total_l"] = round(ch["water_total_l"] + ch["water_lpm"] / 60.0, 2)
+        lpm = sum(ch["water_lpm"] for ch in self.chambers)
         self.plant["water_lpm"] = round(lpm, 2)
         self.plant["water_total_l"] = round(self.plant["water_total_l"] + lpm / 60.0, 2)
 
@@ -292,6 +296,7 @@ class SimManager:
 NUM_FIELDS = ("temp", "setpoint", "humidity", "co2", "curtain_left", "curtain_right", "chimney")
 VENT_FIELDS = ("curtain_left", "curtain_right", "chimney")
 PLANT_FIELDS = ("power_kw", "power_kwh", "water_lpm", "water_total_l")
+CH_OPT_FIELDS = ("water_lpm", "water_total_l")
 
 
 def _num(v) -> bool:
@@ -320,6 +325,9 @@ def sanitize_state(p, device_id: str) -> Optional[dict]:
             if not _num(ch.get(k)):
                 return None
             out[k] = float(ch[k])
+        for k in CH_OPT_FIELDS:
+            if _num(ch.get(k)):
+                out[k] = float(ch[k])
         man = ch.get("manual")
         if isinstance(man, dict):
             out["manual"] = {k: float(man[k]) for k in VENT_FIELDS if _num(man.get(k))}
@@ -569,6 +577,48 @@ async def history_sampler():
                                                            "water_lpm": st["plant"].get("water_lpm"), "ts": ts})
             except Exception as e:
                 logger.warning("history insert failed: %s", e)
+            try:
+                await accumulate_meters(device_id, st)
+            except Exception as e:
+                logger.warning("meter accumulate failed: %s", e)
+
+
+METER_MAX_STEP = {"power": 1000.0, "water": 1_000_000.0}
+
+
+def local_day(dt: Optional[datetime] = None) -> str:
+    return (dt or datetime.now(timezone.utc)).astimezone(ZoneInfo("Europe/Warsaw")).date().isoformat()
+
+
+async def accumulate_meters(device_id: str, st: dict):
+    """Adds the increase of cumulative meters (plant kWh, per-chamber water litres) to the Warsaw-local daily doc."""
+    cur = {"power": st.get("plant", {}).get("power_kwh")}
+    for ch in st["chambers"]:
+        cur[f"w{ch['id']}"] = ch.get("water_total_l")
+    cur = {k: v for k, v in cur.items() if v is not None}
+    if not cur:
+        return
+    last = await db.meter_last.find_one({"_id": device_id}) or {}
+    inc = {}
+    for k, v in cur.items():
+        d = v - last[k] if k in last else None
+        if d is not None and 0 < d <= METER_MAX_STEP["power" if k == "power" else "water"]:
+            inc["kwh" if k == "power" else f"water.{k[1:]}"] = round(d, 4)
+    await db.meter_last.update_one({"_id": device_id}, {"$set": cur}, upsert=True)
+    if inc:
+        day = local_day()
+        await db.meter_daily.update_one({"_id": f"{device_id}|{day}"}, {"$inc": inc, "$set": {"device_id": device_id, "day": day}},
+                                        upsert=True)
+
+
+async def usage_between(device_id: str, start: str, end: str) -> dict:
+    rows = await db.meter_daily.find({"device_id": device_id, "day": {"$gte": start, "$lte": end}}).sort("day", 1).to_list(2000)
+    n = DEVICES[device_id]["chambers"]
+    water = [round(sum(r.get("water", {}).get(str(i), 0) for r in rows), 1) for i in range(n)]
+    return {"from": start, "to": end, "kwh": round(sum(r.get("kwh", 0) for r in rows), 2), "water_l": water,
+            "water_total_l": round(sum(water), 1),
+            "days": [{"day": r["day"], "kwh": round(r.get("kwh", 0), 2),
+                      "water_l": [round(r.get("water", {}).get(str(i), 0), 1) for i in range(n)]} for r in rows]}
 
 
 alarm_active: dict = {}  # "device:chamber" -> last notification epoch
@@ -1268,6 +1318,131 @@ async def usage_daily(device_id: str, days: int = 7, user: dict = Depends(requir
         out.append({"date": day, "kwh": round(r["p"] * SAMPLE_S / 3600, 2),
                     "water_m3": round(r["w"] * SAMPLE_S / 60 / 1000, 3)})
     return {"days": out}
+
+
+DATE_RX = r"^\d{4}-\d{2}-\d{2}$"
+
+
+def parse_day(v: str) -> str:
+    try:
+        return datetime.strptime(v, "%Y-%m-%d").date().isoformat()
+    except (ValueError, TypeError):
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+
+
+def range_or_422(start: str, end: str) -> tuple:
+    a, b = parse_day(start), parse_day(end)
+    if a > b or (datetime.fromisoformat(b) - datetime.fromisoformat(a)).days > 1100:
+        raise HTTPException(422, "invalid date range")
+    return a, b
+
+
+@api.get("/devices/{device_id}/usage/range")
+async def usage_range(device_id: str, start: str, end: str, user: dict = Depends(require("viewer"))):
+    device_or_404(user, device_id)
+    a, b = range_or_422(start, end)
+    return await usage_between(device_id, a, b)
+
+
+@api.get("/devices/{device_id}/usage/range/xlsx")
+async def usage_range_xlsx(device_id: str, start: str, end: str, user: dict = Depends(require("viewer"))):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    d = device_or_404(user, device_id)
+    a, b = range_or_422(start, end)
+    u = await usage_between(device_id, a, b)
+    names = [ch_name(device_id, i) for i in range(d["chambers"])]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Podsumowanie"
+    ws.append([f"{d['client_name']} – {d['name']}"])
+    ws.append(["Okres", f"{a} – {b}"])
+    ws.append([])
+    ws.append(["Pozycja", "Zużycie", "Jednostka"])
+    ws.append(["Prąd (cała chlewnia)", u["kwh"], "kWh"])
+    ws.append(["Woda razem", round(u["water_total_l"] / 1000, 3), "m³"])
+    for nm, w in zip(names, u["water_l"]):
+        ws.append([f"Woda – {nm}", round(w / 1000, 3), "m³"])
+    for c in (ws["A1"], ws["A4"], ws["B4"], ws["C4"]):
+        c.font = Font(bold=True)
+    ws.column_dimensions["A"].width = 34
+    ws.column_dimensions["B"].width = 16
+    ws2 = wb.create_sheet("Dni")
+    ws2.append(["Dzień", "Prąd kWh"] + [f"Woda {nm} m³" for nm in names])
+    for r in u["days"]:
+        ws2.append([r["day"], r["kwh"]] + [round(w / 1000, 3) for w in r["water_l"]])
+    for c in ws2[1]:
+        c.font = Font(bold=True)
+    ws2.column_dimensions["A"].width = 14
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="zuzycie_{device_id}_{a}_{b}.xlsx"'})
+
+
+class CycleIn(BaseModel):
+    start: str = Field(pattern=DATE_RX)
+    animals: Optional[int] = Field(default=None, ge=0, le=100000)
+
+
+class CycleEndIn(BaseModel):
+    end: Optional[str] = Field(default=None, pattern=DATE_RX)
+
+
+async def cycle_view(c: dict) -> dict:
+    end = c.get("end") or local_day()
+    u = await usage_between(c["device_id"], c["start"], end) if c["start"] <= end else {"kwh": 0, "water_l": []}
+    w = u["water_l"][c["chamber"]] if c["chamber"] < len(u["water_l"]) else 0
+    return {"id": str(c["_id"]), "chamber": c["chamber"], "start": c["start"], "end": c.get("end"), "animals": c.get("animals"),
+            "days": (datetime.fromisoformat(end) - datetime.fromisoformat(c["start"])).days + 1,
+            "water_l": w, "kwh": u["kwh"], "started_by": c.get("started_by"), "ended_by": c.get("ended_by")}
+
+
+@api.get("/devices/{device_id}/cycles")
+async def list_cycles(device_id: str, chamber: int, user: dict = Depends(require("viewer"))):
+    device_or_404(user, device_id)
+    rows = await db.cycles.find({"device_id": device_id, "chamber": chamber}).sort("start", -1).to_list(100)
+    return {"cycles": [await cycle_view(c) for c in rows]}
+
+
+@api.post("/devices/{device_id}/chambers/{chamber}/cycles")
+async def start_cycle(device_id: str, chamber: int, body: CycleIn, user: dict = Depends(require("operator"))):
+    d = device_or_404(user, device_id)
+    if not 0 <= chamber < d["chambers"]:
+        raise HTTPException(404, "unknown chamber")
+    start = parse_day(body.start)
+    if start > local_day():
+        raise HTTPException(422, "start date in the future")
+    if await db.cycles.find_one({"device_id": device_id, "chamber": chamber, "end": None}):
+        raise HTTPException(409, "active cycle exists")
+    doc = {"device_id": device_id, "chamber": chamber, "start": start, "end": None, "animals": body.animals,
+           "started_by": user["email"], "created_at": now_iso()}
+    await db.cycles.insert_one(doc)
+    await log_event("info", f"{d['name']} – {ch_name(device_id, chamber)}: nowe wstawienie {start}"
+                    + (f", {body.animals} szt." if body.animals is not None else "") + f" ({user['email']})",
+                    {"user": user["email"]}, device_id)
+    return await cycle_view(doc)
+
+
+@api.post("/devices/{device_id}/cycles/{cycle_id}/end")
+async def end_cycle(device_id: str, cycle_id: str, body: CycleEndIn, user: dict = Depends(require("operator"))):
+    d = device_or_404(user, device_id)
+    if not ObjectId.is_valid(cycle_id):
+        raise HTTPException(404, "cycle not found")
+    c = await db.cycles.find_one({"_id": ObjectId(cycle_id), "device_id": device_id})
+    if not c:
+        raise HTTPException(404, "cycle not found")
+    if c.get("end"):
+        raise HTTPException(409, "cycle already ended")
+    end = parse_day(body.end) if body.end else local_day()
+    if end < c["start"] or end > local_day():
+        raise HTTPException(422, "invalid end date")
+    await db.cycles.update_one({"_id": c["_id"]}, {"$set": {"end": end, "ended_by": user["email"]}})
+    c.update(end=end, ended_by=user["email"])
+    v = await cycle_view(c)
+    await log_event("info", f"{d['name']} – {ch_name(device_id, c['chamber'])}: koniec chowu {c['start']} – {end}, "
+                    f"woda {round(v['water_l'] / 1000, 2)} m³ ({user['email']})", {"user": user["email"]}, device_id)
+    return v
 
 
 @api.get("/devices/{device_id}/history/csv")
