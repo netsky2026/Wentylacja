@@ -1,4 +1,4 @@
-import { Thermometer, Droplets, Wind, Power, Flame, AlertTriangle, Target } from "lucide-react";
+import { Thermometer, Droplets, Wind, Flame, AlertTriangle, Target } from "lucide-react";
 import { CurtainWindow, ChimneyGauge } from "@/components/Gauges";
 import { VentControl } from "@/components/VentControl";
 import { ChamberNameEdit } from "@/components/ChamberNameEdit";
@@ -58,15 +58,5 @@ export const ChamberScreen = ({ ch, t, send, canControl, dev, canRename, onRenam
     </div>
 
     {canControl && <VentControl ch={ch} t={t} send={send} />}
-
-    {canControl && <button data-testid={`chamber-${ch.id}-power`} onClick={() => send({ type: "chamber_power", chamber: ch.id, value: !ch.on })}
-      className="action-btn" style={{
-        width: "100%",
-        background: ch.on ? "rgba(255,59,48,0.10)" : "rgba(48,209,88,0.12)",
-        color: ch.on ? "var(--accent)" : "var(--green)",
-        borderColor: ch.on ? "var(--accent)" : "var(--green)",
-      }}>
-      <Power size={16} /> {ch.on ? t.turnOff : t.turnOn}
-    </button>}
   </div>
 );

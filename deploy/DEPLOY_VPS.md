@@ -146,7 +146,6 @@ Bramka **wysyła** co 1–5 s na temat `PREFIX/ID_STEROWNIKA/state` (JSON):
 Bramka **odbiera** komendy z tematu `PREFIX/ID_STEROWNIKA/command`:
 ```json
 {"type":"set_setpoint","chamber":0,"value":21.5}
-{"type":"chamber_power","chamber":0,"value":true}
 {"type":"set_mode","chamber":0,"value":"manual"}
 {"type":"set_vent","chamber":0,"value":{"curtain_left":60,"chimney":30}}
 ```

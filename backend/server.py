@@ -638,6 +638,29 @@ async def alarm_notifier():
             logger.warning("alarm notifier failed: %s", e)
 
 
+PL_TZ = ZoneInfo("Europe/Warsaw")
+
+
+async def reset_manual_to_auto():
+    for device_id, st in list(gateway.states.items()):
+        for ch in st.get("chambers", []):
+            if ch.get("mode") == "manual" and gateway.publish_command(
+                    device_id, {"type": "set_mode", "chamber": ch["id"], "value": "auto", "request_id": uuid.uuid4().hex}):
+                await log_event("info", f"{dev_label(device_id)} – {ch_name(device_id, ch['id'])}: automatyczny powrót do AUTO (00:00)",
+                                {"user": "system"}, device_id)
+
+
+async def midnight_auto():
+    while True:
+        now = datetime.now(PL_TZ)
+        nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
+        await asyncio.sleep((nxt - now).total_seconds())
+        try:
+            await reset_manual_to_auto()
+        except Exception as e:
+            logger.error("midnight auto reset failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     gateway.loop = asyncio.get_running_loop()
@@ -654,7 +677,7 @@ async def lifespan(app: FastAPI):
     gateway.mqtt_start()
     sims.sync()
     tasks = [asyncio.create_task(history_sampler()), asyncio.create_task(alarm_notifier()),
-             asyncio.create_task(ws_revalidator())]
+             asyncio.create_task(ws_revalidator()), asyncio.create_task(midnight_auto())]
     yield
     for t in tasks:
         t.cancel()
@@ -704,7 +727,7 @@ def device_view(device_id: str, user: dict) -> dict:
 # Models
 # ============================================================
 class CommandIn(BaseModel):
-    type: str = Field(pattern=r"^(set_setpoint|chamber_power|set_mode|set_vent)$")
+    type: str = Field(pattern=r"^(set_setpoint|set_mode|set_vent)$")
     chamber: int = Field(ge=0, le=9)
     value: Any = None
 
@@ -1106,6 +1129,12 @@ async def delete_device(device_id: str, user: dict = Depends(require("superadmin
     sims.sync()
     gateway.states.pop(device_id, None)
     await log_event("info", f"Usunięto sterownik: {label}", {"user": user["email"]}, client_id=cid)
+    return {"ok": True}
+
+
+@api.post("/admin/auto-reset")
+async def admin_auto_reset(user: dict = Depends(require("superadmin"))):
+    await reset_manual_to_auto()
     return {"ok": True}
 
 

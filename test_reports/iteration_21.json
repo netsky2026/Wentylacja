@@ -1,0 +1,38 @@
+{
+  "summary": "Tested the 4 new themes: forest, grass, sun and orange. Backend: 11/11 pytest pass. PUT /api/auth/preferences and PATCH /api/clients/{id} accept all 4 themes and null, and reject 'pink' with 422. Branding returns the theme. Manifest background_color/theme_color match THEME_BG (forest #050F07, grass #2E9A3E, sun #FFD000, orange #FF8A1F). Frontend at 390x844: the theme select has 13 options (12 themes plus 'Domyślny klienta (...)'), including the 4 new Polish labels. Each theme was applied via the API and checked on the branded login, overview, chambers, data and settings screens. A script measured text contrast against the real background (gradient stops included) and checked for horizontal overflow. No overflow anywhere (scrollWidth=390). forest, sun and orange: 0 text elements below 3:1 on every screen. On sun and orange the header title, subtitles and lang toggle outside the panels are dark; panels are dark with white text; bottom nav is readable. Toasts (sonner) show as black with white text in every theme. Desktop 1920x800 for grass, sun and orange: the 560px app column (x=680) has the coloured gradient, the page sides are dark and the bottom nav bar is full width. Only problem found is in grass: text outside the panels is light text on light green. Restored originals and checked them: admin user theme = orange, Kowalski = amber.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "backend/auth.py + server.py", "issue": "The theme regex is still duplicated in two places (auth.py line 168 and server.py THEME_RX). Every new theme has to be added twice. Import THEME_RX from one shared module."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Grass theme (Świeża trawa - zielona aplikacja) - header and subtitles outside panels, all screens incl. login", "issues": [
+        "app-title / login-title (white #FFFFFF) on the top of the app gradient #6BCB4F has 2.04:1 contrast, even with the text-shadow.",
+        "View subtitles in --muted #C8EBCE on #6BCB4F have 1.58:1 contrast: 'Wszystkie sterowniki · alarmy na górze' (overview), 'Historia · Komora 1 · 3 godz.' (data), 'Progi alarmów / Nastawa · ...' (settings), 'Zaloguj się, aby sterować wentylacją chlewni' (login).",
+        "Suggested fix 1 (same approach as sun/orange): add [data-theme=grass] .mobile-wrap { --text:#0B2E12; --muted:#14471F } and reset .panel/.sp-btn/.action-btn back to #FFFFFF/#C8EBCE. Dark #0B2E12 on #6BCB4F is about 8:1. Then drop the text-shadow.",
+        "Suggested fix 2 (keeps white text): darken the gradient start to about #2E8F3A (white about 4:1) and use white, not #C8EBCE, for the muted text outside panels."
+      ]},
+      {"screen": "Branded login (?klient=slug) for grass/sun/orange", "issues": [
+        "Still open from iteration 20: meta[name=theme-color] stays #0A0A0A on the login screen. The dashboard sets it correctly (#6BCB4F / #FFF06A / #FFB15C). On the bright themes the mobile status bar is black above a yellow/orange/green screen. Fix: in LoginScreen's data-theme effect, apply the same --status||--bg logic as App.js line 174.",
+        "Still open from iteration 20: Toaster on the login screen is hardcoded to theme='dark'. This is acceptable for the new themes, because they all use dark toasts."
+      ]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration21_themes.py", "/app/tests/contrast_scan.js", "/app/test_reports/pytest/pytest_iter21.xml"],
+  "action_items": [
+    "Grass theme: fix low contrast of header title and subtitles on the light-green app gradient (2.04:1 and 1.58:1). Use dark scoped --text/--muted like sun/orange, or darken the gradient top.",
+    "Set meta theme-color on the branded LoginScreen from --status/--bg (still #0A0A0A).",
+    "Optional: share the theme regex between auth.py and server.py."
+  ],
+  "critical_code_review_comments": [
+    "The grass and forest theme blocks in index.css are identical except --status/--app-bg. Define grass as forest plus extra selectors to avoid duplicating 8 lines.",
+    "The sun/orange scoping pattern (.mobile-wrap vars, reset inside .panel/.sp-btn/.action-btn) works. Any new element on the app background that is not a .panel (e.g. a future bare card) will inherit dark text on a dark card. Keep a shared 'surface' class in mind."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration21_themes.py", "/app/tests/contrast_scan.js"],
+  "success_rate": {"backend": "100%", "frontend": "92% (grass contrast issue outside panels; everything else passes)"},
+  "seed_data_creation": "None. Admin user theme and Kowalski client theme were changed temporarily and restored to orange and amber (verified).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Original state: admin user theme=orange, Kowalski client theme=amber. Set themes via fetch('/api/auth/preferences',{method:'PUT'}) inside the page (same-origin, cookies), then reload. /app/tests/contrast_scan.js can be used with page.evaluate(open(...).read()) to list text below 3:1 against the real background (gradient-aware) and to report scrollWidth."
+}

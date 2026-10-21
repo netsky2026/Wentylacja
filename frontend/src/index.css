@@ -71,7 +71,8 @@
   --warn-text: #FFE08A; --warn-bg: rgba(255,224,138,0.14); --warn-border: rgba(255,224,138,0.45);
   --status: #6BCB4F; --app-bg: linear-gradient(180deg, #6BCB4F 0%, #3FAE47 35%, #2E9A3E 75%, #268A36 100%);
 }
-[data-theme="grass"] .mobile-wrap { text-shadow: 0 1px 3px rgba(4,36,10,0.6); }
+[data-theme="grass"] .mobile-wrap { --text: #072410; --muted: #0F3D1B; color: var(--text); }
+[data-theme="grass"] .mobile-wrap .panel, [data-theme="grass"] .mobile-wrap .sp-btn, [data-theme="grass"] .mobile-wrap .action-btn { --text: #FFFFFF; --muted: #C8EBCE; color: var(--text); }
 [data-theme="sun"] {
   --bg: #0F0C02; --card: #2B2304; --border: #5C4B0C; --text: #FFFFFF; --muted: #EDE1A8;
   --primary: #FFD60A; --primary-rgb: 255,214,10; --on-primary: #2A2100; --primary-text: #fff4c2;

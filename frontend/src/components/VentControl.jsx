@@ -29,19 +29,20 @@ export const VentControl = ({ ch, t, send }) => {
 
   return (
     <div className="reg-cell mb-3" data-testid={`chamber-${ch.id}-vent-control`}>
-      <div className="flex items-center justify-between" style={{ marginBottom: manual ? 14 : 0 }}>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>{t.controlMode}</span>
-        <div className="flex" style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ marginBottom: manual ? 14 : 0 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{t.controlMode}</div>
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
           {[["auto", t.modeAuto], ["manual", t.modeManual]].map(([k, label]) => (
             <button key={k} data-testid={`chamber-${ch.id}-mode-${k}`} onClick={() => !ch.on || ch.mode === k ? null : mode(k)}
               disabled={!ch.on} className="font-head"
               style={{
-                background: ch.mode === k ? "rgba(var(--primary-rgb),0.16)" : "transparent", color: ch.mode === k ? "var(--primary)" : "var(--muted)",
-                border: "none", padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: ch.on ? "pointer" : "not-allowed",
+                background: ch.mode === k ? "var(--primary)" : "transparent", color: ch.mode === k ? "var(--on-primary)" : "var(--muted)",
+                border: "none", padding: "14px 10px", fontSize: 19, fontWeight: 700, letterSpacing: "0.06em", cursor: ch.on ? "pointer" : "not-allowed",
                 transition: "background-color 0.2s ease, color 0.2s ease",
               }}>{label}</button>
           ))}
         </div>
+        {manual && <div data-testid={`chamber-${ch.id}-auto-return`} style={{ fontSize: 11, color: "var(--warn-text)", marginTop: 8, textAlign: "center" }}>{t.autoReturn}</div>}
       </div>
       {manual && ch.on && (
         <div className="fade-in">
