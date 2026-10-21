@@ -711,9 +711,12 @@ async def midnight_auto():
         await asyncio.sleep(62 - now.second - now.microsecond / 1e6)
         try:
             await reset_manual_to_auto(datetime.now(PL_TZ).strftime("%H:%M"))
-            await monthly_tick()
         except Exception as e:
             logger.error("midnight auto reset failed: %s", e)
+        try:
+            await monthly_tick()
+        except Exception as e:
+            logger.error("monthly tick failed: %s", e)
 
 
 @asynccontextmanager
@@ -1423,7 +1426,7 @@ async def send_monthly_report(client_id: str, force: bool = False) -> dict:
     to = [u["email"] async for u in db.users.find({"client_id": client_id, "role": "admin"})]
     if not devs or not to:
         return {"sent": 0, "recipients": to}
-    files = tuple((f"zuzycie_{dv}_{a[:7]}.xlsx", await usage_xlsx(dv, a, b)) for dv in devs)
+    files = tuple([(f"zuzycie_{dv}_{a[:7]}.xlsx", await usage_xlsx(dv, a, b)) for dv in devs])
     name = DEVICES[devs[0]]["client_name"]
     body = f"Dzień dobry,\n\nw załączniku raport zużycia wody i prądu za okres {a} – {b} ({name}).\n\nMarco Polo Wentylacja"
     res = []

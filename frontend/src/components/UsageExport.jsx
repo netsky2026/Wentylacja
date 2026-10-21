@@ -66,7 +66,7 @@ export const CsvExport = ({ t, ch, deviceId, dev }) => {
       </div>
       <a data-testid="csv-download" className="action-btn" href={`${API}/devices/${deviceId}/history/${fmt}?chamber=${ch.id}&hours=${hours}`}
         style={{ width: "100%", padding: 10, textDecoration: "none", color: "var(--text)" }}>
-        <Download size={15} /> {t.download}
+        <Download size={15} /> {fmt === "xlsx" ? t.rangeExcel : t.downloadCsv}
       </a>
     </div>
   );

@@ -8,7 +8,7 @@ const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/W
 const m3 = (l) => (l / 1000).toFixed(2);
 const PerHead = ({ t, c, avg }) => {
   if (c.water_per_head_l == null) return null;
-  const diff = avg ? Math.round((c.water_per_head_l / avg - 1) * 100) : null;
+  const diff = avg ? Math.round((c.water_per_head_l / c.days / avg - 1) * 100) : null;
   return (
     <span data-testid={`cycle-per-head-${c.id}`}> · {t.perHead}: <b style={{ color: "var(--text)" }}>{c.water_per_head_l} l</b>
       {diff != null && <span style={{ color: diff > 10 ? "var(--accent)" : diff < -10 ? "var(--green)" : "var(--muted)" }}> ({diff > 0 ? "+" : ""}{diff}% {t.vsAvg})</span>}
@@ -16,7 +16,7 @@ const PerHead = ({ t, c, avg }) => {
   );
 };
 const avgOf = (rows) => {
-  const v = rows.map((c) => c.water_per_head_l).filter((x) => x != null);
+  const v = rows.filter((c) => c.water_per_head_l != null).map((c) => c.water_per_head_l / c.days);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 };
 
@@ -35,7 +35,7 @@ const StartForm = ({ t, onStart, onCancel }) => {
 };
 
 const Past = ({ t, rows }) => (<>
-  {avgOf(rows) != null && <div style={{ fontSize: 12, marginTop: 10 }} data-testid="cycle-avg-per-head">{t.avgPerHead}: <b>{avgOf(rows).toFixed(2)} l</b></div>}
+  {avgOf(rows) != null && <div style={{ fontSize: 12, marginTop: 10 }} data-testid="cycle-avg-per-head">{t.avgPerHead}: <b>{avgOf(rows).toFixed(2)} l / {t.cycleDay}</b></div>}
   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }} data-testid="cycle-history">
     {rows.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>{t.cycleNoHistory}</div>}
     {rows.map((c) => (

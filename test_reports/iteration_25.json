@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 25: Excel/CSV exports, per-head water in cycles, monthly e-mail report. Backend pytest 19/19 pass AFTER fixing one critical bug (POST /api/monthly-report/send returned 500). Verified: history/xlsx (openpyxl loads, header 'Czas' bold, rows present, viewer allowed, chamber 6/-1 -> 404, cross-tenant blocked), history/csv still works, usage/range/csv ';' separated with 8 cols + RAZEM row (10 m3 for synthetic data), usage/range/xlsx sheets Podsumowanie/Dni, 422 on bad dates; cycles water_per_head_l = round(water_l/animals,2) for ended (10000 l/100 = 100.0) and active (POST animals 200) cycles, null when animals missing; monthly GET (enabled true, client admin in recipients, operator not, period [2026-09-01, 2026-09-30]), superadmin without client_id 422, PUT false persists in DB + GET, invalid body 422, send -> sent 0 / status ['not_configured'] / event 'Raport miesięczny 2026-09: <email> – not_configured' with client_id / monthly_reports doc written; client admin scoped to own client (foreign client_id ignored); operator/viewer 403 on GET/PUT/POST; unauth 401. Frontend 390x844: cycle card shows cycle-per-head with '(-16% vs średnia)' in green (125.7 l vs avg 150), history shows cycle-avg-per-head 'Średnio na sztukę (poprzednie chowy): 150.00 l', rows +100% red / -50% green; Dane export card export-format-xlsx active by default, toggling csv switches csv-download href /history/xlsx <-> /history/csv, both download 200 with correct mime/filename; range card range-xlsx/range-csv (after range-show) return xlsx/csv with RAZEM row; Settings (superadmin, Ferma Kowalski) monthly-report-card: checkbox toggle persists server-side and back, recipients text, send-now toast 'brak administratorów fermy z e-mailem' with no admins and 'Nie wysłano (not_configured)' as client admin.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/monthly-report/send (and scheduled monthly_tick)", "issue": "FIXED BY TESTING AGENT: send_monthly_report used tuple((..., await usage_xlsx(...)) for dv in devs) - a generator expression containing await becomes an async generator -> TypeError 'async_generator' object is not iterable -> HTTP 500 whenever the client had at least one admin. The scheduled 1st-of-month job would also have silently failed (caught and logged). Changed to tuple([...]) list comprehension (server.py line ~1426).", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "midnight_auto loop", "issue": "monthly_tick() is called inside the same try as reset_manual_to_auto(); if reset_manual_to_auto raises at 06:00 on the 1st, the monthly report is skipped for that month (only runs when strftime=='06:00'). Consider separate try blocks, and/or a catch-up check (e.g. day==1 and hour>=6 and no monthly_reports key) so a backend restart/sleep at 06:00 does not lose the report."},
+      {"endpoint": "POST /api/monthly-report/send", "issue": "Forced send writes the dedupe key for the previous month even when status is not_configured/failed; harmless for the previous month but means a failed SMTP send is never retried automatically."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CsvExport (UsageExport.jsx)", "issue": "Download button label is always 'Pobierz CSV' (i18n key download) even when Excel format is selected (default). Should be neutral 'Pobierz' or switch to 'Pobierz Excel'/'Pobierz CSV' per fmt; card title key is also named exportCsv.", "selector": "[data-testid='csv-download']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "CycleCard (active cycle)", "issues": ["Active cycle per-head % compares a partial (in-progress) cycle against full previous cycles, so it will almost always show large green negative % early in the cycle (e.g. day 5 shows -80%). Consider normalising per day (l/head/day) or labelling it as 'do tej pory' to avoid misleading comparison."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration25_xlsx_perhead_monthly.py", "/app/backend/tests/seed_it25_ui.py", "/app/test_reports/pytest/pytest_iteration25.xml"],
+  "action_items": [
+    "Keep/verify the fix in send_monthly_report (tuple([...]) instead of tuple(genexpr with await))",
+    "Fix csv-download label to reflect selected format (currently always 'Pobierz CSV')",
+    "Isolate monthly_tick in its own try/except and consider catch-up logic if the 06:00 minute is missed",
+    "Optional: compare active-cycle per-head usage per day instead of absolute"
+  ],
+  "critical_code_review_comments": [
+    "send_monthly_report async-generator bug (fixed) - no test covered the recipients>0 path before",
+    "monthly_tick relies on hitting exactly the '06:00' minute; restart/latency at that minute skips the month",
+    "notify.send_email attachments use correct xlsx MIME; EmailMessage with attachment builds fine (verified offline)",
+    "server.py is 1680 lines - exceeds 700-line guideline; split exports/reports/cycles into routers"
+  ],
+  "updated_files": ["/app/backend/server.py", "/app/backend/tests/test_iteration25_xlsx_perhead_monthly.py", "/app/backend/tests/seed_it25_ui.py"],
+  "success_rate": {"backend": "100% (19/19) after fix; 1 critical bug found", "frontend": "95% (all flows work; 1 label bug)"},
+  "seed_data_creation": "Temporary synthetic meter_daily rows (test_tag) for kowalski-a prev/current month, cycles on kowalski-a chamber 0, users test_*/it25ui_admin@kowalski.pl - all removed. monthly_report field unset on clients (default enabled). chlodnia-01 3 active cycles untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with -n 0 (xdist is enabled by default and duplicates module fixtures per worker). Ferma Kowalski client_id 6ad7dcc3261e5ba3c23315b7, Marco Polo 6ad7dcb08b38a7c48f3db7d2. Server date 2026-10-21 Warsaw. Welcome screen: wait_for_selector welcome-login-button before click. On Dane tab use JS clicks. range-xlsx/range-csv only render after range-show. seed_it25_ui.py seed|clean creates per-head UI data on kowalski-a chamber 0.",
+  "rca of the issue": "POST /monthly-report/send 500: `tuple((name, await f(x)) for x in xs)` inside async def -> Python compiles a generator expression containing await as an async generator; tuple() cannot iterate it -> TypeError. Reproduce: create admin user for client, POST /api/monthly-report/send?client_id=... -> 500 (backend.err.log line server.py:1426). Mitigation: list comprehension tuple([...]) (applied) - retested 200 with status ['not_configured']."
+}
