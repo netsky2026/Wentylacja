@@ -1,48 +1,129 @@
 {
-  "app_type": "dashboard",
-  "theme": "dark",
-  "archetype": "THE PERFORMANCE PRO / INDUSTRIAL AUTOMATION",
+  "project_name": "Marco Polo Wentylacja - Business Card Welcome Page",
+  "app_type": "landing_page",
+  "target_audience": "Piggery farm owners, ventilation operators, PLC technicians, and farm managers in Poland using Fatek PLC / MQTT system",
+  "design_philosophy": {
+    "archetype": "THE PERFORMANCE PRO / TACTICAL MINIMALISM",
+    "theme": "Dark Moody Industrial IoT with Emerald Green Accent",
+    "core_principles": [
+      "Tactical Industrial Aesthetic: High contrast telemetry look with dark matte surfaces (#0A0A0A) and glowing status indicators (#34A56A).",
+      "Immediate Action: Focus on zero-friction access to the live ventilation control system via 'Zaloguj' CTA and tenant link auto-routing.",
+      "Data Trust & Precision: Feature real-time simulated telemetry metrics (temperature, humidity, CO2, curtain status, fan speeds) to build immediate confidence.",
+      "Mobile-First & PWA First: Perfectly optimized for 390px mobile screens (one-handed thumb control) scaling elegantly to 1920px widescreen dashboard displays."
+    ]
+  },
   "typography": {
-    "heading": "Barlow Condensed, sans-serif",
-    "body": "JetBrains Mono, Inter, monospace"
+    "headline_font": "Barlow Condensed, sans-serif",
+    "body_font": "JetBrains Mono, monospace",
+    "font_weights": {
+      "light": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-bold uppercase tracking-tight font-head",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-bold uppercase tracking-wide font-head",
+      "h3": "text-xl sm:text-2xl font-semibold font-head",
+      "subheading": "text-sm sm:text-base text-muted tracking-wide font-mono",
+      "body": "text-sm sm:text-base font-mono leading-relaxed",
+      "label": "text-xs font-mono tracking-wider uppercase text-muted"
+    }
   },
   "colors": {
-    "primary": "#007AFF",
-    "accent": "#FF3B30",
-    "background": "#0A0A0A",
-    "card_background": "#141414",
-    "border": "#262626",
-    "text": "#F5F5F7",
-    "muted": "#8E8E93"
-  },
-  "image_urls": [
-    {
-      "category": "hero_control_panel",
-      "description": "Industrial control room dashboard dark mode",
-      "url": "https://images.unsplash.com/photo-1607799632518-da91dd151b38?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxpbmR1c3RyaWFsJTIwYXV0b21hdGlvbiUyMGNvbnRyb2wlMjBwYW5lbCUyMGRhc2hib2FyZCUyMGRhcmslMjBtb2RlfGVufDB8fHx8MTc5MjQ5OTA4N3ww&ixlib=rb-4.1.0&q=85"
+    "mode": "dark",
+    "variables": {
+      "--bg": "#0A0A0A",
+      "--card": "#141414",
+      "--border": "#262626",
+      "--text": "#F5F5F7",
+      "--muted": "#8E8E93",
+      "--primary": "#34A56A",
+      "--primary-rgb": "52, 165, 106",
+      "--on-primary": "#0A0A0A",
+      "--primary-text": "#d4f0e0",
+      "--accent": "#FF3B30",
+      "--green": "#30D158",
+      "--surface": "#0d0d0d",
+      "--surface2": "#2a2f35"
     },
-    {
-      "category": "server_rack",
-      "description": "Industrial control room electronics server rack",
-      "url": "https://images.unsplash.com/photo-1738918937796-743064feefa1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTB8MHwxfHNlYXJjaHwxfHxpbmR1c3RyaWFsJTIwY2NvbnRyb2wlMjByb29tJTIwZWxlY3Ryb25pY3MlMjBzZXJ2ZXIlMjByYWNrfGVufDB8fHx8MTc5MjQ5OTA5MHww&ixlib=rb-4.1.0&q=85"
+    "tailored_palette": {
+      "background": "#0A0A0A",
+      "card_bg": "#141414",
+      "card_border": "#262626",
+      "primary_green": "#34A56A",
+      "alert_red": "#FF3B30",
+      "status_green": "#30D158",
+      "text_main": "#F5F5F7",
+      "text_muted": "#8E8E93"
     }
-  ],
-  "key_features": [
-    "Device connection status (online/offline with MQTT broker indicator)",
-    "Live Fatek PLC I/O state view (Inputs X, Outputs Y, Relays M, Data Registers R)",
-    "Output toggle control with direct MQTT command publishing",
-    "Register write control (16-bit integer/hex/float)",
-    "Live MQTT message and event inspection log with severity filters",
-    "Broker connection settings (Host, Port, Topic, Client ID)",
-    "Simulated Fatek PLC demo mode for testing without physical hardware"
-  ],
-  "bilingual_support": [
-    "Polski",
-    "English"
-  ],
-  "accessibility": {
-    "apca_compliant": true,
-    "reduced_motion_support": true,
-    "data_testids_required": true
-  }
+  },
+  "layout_and_structure": {
+    "screen_type": "Single-Screen Welcome / Landing Page (Wizytówka)",
+    "viewport_behavior": "Strict 100vh viewport fitting on desktop without accidental vertical overflow, responsive single scroll container on mobile (390px).",
+    "grid_system": "12-column Swiss grid on desktop (lg:grid-cols-12 gap-8), single column on mobile (grid-cols-1 gap-4).",
+    "hero_section": {
+      "col_span": "lg:col-span-7",
+      "elements": [
+        "Brand identity with logo icon, title 'Marco Polo Wentylacja', and status badge 'Fatek PLC / MQTT System Active'",
+        "Headline (PL): 'INTELLIGENTNE STEROWANIE WENTYLACJĄ W CHLEWNI'",
+        "Headline (EN): 'INTELLIGENT BARN VENTILATION CONTROL'",
+        "Tagline: 'Precyzyjna kontrola temperatury, wilgotności, CO₂ oraz klap i kominów wentylacyjnych w Twoich komorach.'",
+        "Primary CTA: 'ZALOGUJ SIĘ DO SYSTEMU' (opens login modal or redirects to auth screen) with green neon subtle glow",
+        "Language switch (PL / EN) in top-right floating header glass panel",
+        "Client link handling: ?klient=... parameter automatically bypasses landing and forwards to direct login screen if present."
+      ]
+    },
+    "telemetry_card_section": {
+      "col_span": "lg:col-span-5",
+      "elements": [
+        "Interactive / Animated Telemetry Preview Card ('Kolekcja Komór Live')",
+        "Live sensor pills showing simulated real-time stats (Temp: 21.4°C, Wilgotność: 62%, CO₂: 780 ppm, Klapy: 45% Uchylone, Komin: RUNNING)",
+        "Hero Image overlay with dark moody industrial farm fan or piggery interior (dark overlay with gradient transition to #141414)",
+        "System state badges: Broker MQTT Online, Sterownik Fatek Active, Alarm System Ready"
+      ]
+    },
+    "contact_block": {
+      "visibility_rule": "Hidden by default if empty. Displayed at bottom of card if phone/email filled in Settings or props.",
+      "fields": ["Infolinia Techniczna / Telefon", "Adres E-mail Wsparcia"]
+    }
+  },
+  "media_assets": {
+    "hero_images": [
+      {
+        "url": "https://images.unsplash.com/photo-1695760177249-85c742906940?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBmYXJtJTIwYmFybiUyMHZlbnRpbGF0aW9uJTIwaW5kdXN0cmlhbHxlbnwwfHx8fDE3OTI1NjM1MjB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Industrial barn ventilation fan with metal housing - ideal dark moody backdrop",
+        "category": "hero_background"
+      },
+      {
+        "url": "https://images.pexels.com/photos/6791938/pexels-photo-6791938.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Clean modern piggery facility interior showing chamber pens",
+        "category": "feature_card"
+      }
+    ]
+  },
+  "motion_and_interactions": {
+    "login_button_hover": "Hover state escalates shadow to box-shadow: 0 0 24px rgba(52,165,106,0.4) and subtle translateY(-2px)",
+    "telemetry_pulses": "Green LED indicators pulse gently with 1.8s ease-in-out infinite animation",
+    "curtain_animation": "Simulated vent curtain position bar animates smoothly on slider hover or state cycle",
+    "reduced_motion": "Respects prefers-reduced-motion media query by disabling pulse and slide effects"
+  },
+  "testing_and_data_testids": {
+    "welcome_container": "welcome-page-container",
+    "brand_logo": "welcome-brand-logo",
+    "brand_title": "welcome-brand-title",
+    "login_button": "welcome-login-button",
+    "lang_toggle_pl": "welcome-lang-pl",
+    "lang_toggle_en": "welcome-lang-en",
+    "contact_block": "welcome-contact-block",
+    "telemetry_preview": "welcome-telemetry-preview",
+    "status_broker": "welcome-status-broker"
+  },
+  "instructions_to_main_agent": [
+    "Ensure all code remains compatible with React JS (.js extension, no TSX syntax).",
+    "Keep styling in line with CSS variables already declared in /app/frontend/src/index.css (--bg, --card, --border, --primary, --text).",
+    "Verify that the 'Zaloguj' button triggers the existing authentication flow seamlessly.",
+    "Do NOT force a light theme; default to dark theme (#0A0A0A) matching the app shell.",
+    "Include all specified data-testids on interactive elements to satisfy test suites."
+  ]
 }
