@@ -36,6 +36,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import auth  # noqa: E402
+import notify  # noqa: E402
 from auth import require  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -56,47 +57,22 @@ DEFAULT_TH = {"temp_max": 28.0, "co2_max": 3000.0}
 LEGACY_DEVICE = "chlodnia-01"
 FERNET = Fernet(os.environ["BROKER_SECRET"].encode())
 
-STORAGE_URL = ((os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com").rstrip("/") \
-    + "/objstore/api/v1/storage"
+LOGO_DIR = Path(os.environ["LOGO_DIR"])
 STORAGE_APP = "marco-polo-wentylacja"
-_storage_key: Optional[str] = None
 
 
-def init_storage(force: bool = False) -> str:
-    global _storage_key
-    if _storage_key and not force:
-        return _storage_key
-    r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": os.environ["EMERGENT_LLM_KEY"]}, timeout=30)
-    r.raise_for_status()
-    _storage_key = r.json()["storage_key"]
-    return _storage_key
+def put_object(path: str, data: bytes) -> dict:
+    f = LOGO_DIR / path
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(data)
+    return {"path": path}
 
 
-LOGO_DIR = os.environ.get("LOGO_DIR")  # set on self-hosted VPS -> logos on local disk instead of object storage
-
-
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    if LOGO_DIR:
-        f = Path(LOGO_DIR) / path
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_bytes(data)
-        return {"path": path}
-    for attempt in (0, 1):
-        r = requests.put(f"{STORAGE_URL}/objects/{path}", data=data, timeout=120,
-                         headers={"X-Storage-Key": init_storage(force=attempt == 1), "Content-Type": content_type})
-        if r.status_code != 404 or attempt:
-            r.raise_for_status()
-            return r.json()
-
-
-def get_object(path: str) -> tuple:
-    if LOGO_DIR:
-        return (Path(LOGO_DIR) / path).read_bytes(), "image/png"
-    for attempt in (0, 1):
-        r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": init_storage(force=attempt == 1)}, timeout=60)
-        if r.status_code != 404 or attempt:
-            r.raise_for_status()
-            return r.content, r.headers.get("Content-Type", "image/png")
+def get_object(path: str) -> bytes:
+    f = LOGO_DIR / path
+    if not f.is_file():
+        raise HTTPException(404, "No logo")
+    return f.read_bytes()
 
 
 THEME_RX = r"^(green|light|blue|amber)$"
@@ -609,18 +585,22 @@ async def save_alarm_state():
 
 
 async def send_alarm(client_id: str, subject: str, body: str, kind: str):
-    """Delivery channel not configured yet: notifications are MOCKED (stored + logged only)."""
     cfg = await db.alarm_settings.find_one({"_id": client_id}) or {}
     recipients = cfg.get("recipients", []) if cfg.get("enabled", True) else []
     if not recipients:
         return
     ts = now_iso()
+    results = await asyncio.gather(*[asyncio.to_thread(notify.deliver, r["type"], r["value"], subject, body)
+                                     for r in recipients])
     await db.alarm_notifications.insert_many([
         {"client_id": client_id, "ts": ts, "kind": kind, "channel": r["type"], "to": r["value"], "subject": subject,
-         "body": body, "status": "mocked"} for r in recipients])
-    logger.info("ALARM NOTIFY (mocked) %s -> %s", subject, [r["value"] for r in recipients])
-    await log_event("info", f"Powiadomienie ({len(recipients)} odb., tryb testowy): {subject}", {"kind": kind},
-                    client_id=client_id)
+         "body": body, "status": st, "error": err} for r, (st, err) in zip(recipients, results)])
+    sent = sum(st == "sent" for st, _ in results)
+    failed = [r["value"] for r, (st, _) in zip(recipients, results) if st == "failed"]
+    logger.info("ALARM NOTIFY %s -> %s", subject, [(r["value"], st) for r, (st, _) in zip(recipients, results)])
+    await log_event("warning" if failed else "info",
+                    f"Powiadomienie: wysłano {sent}/{len(recipients)}" + (f", błąd: {', '.join(failed)}" if failed else "")
+                    + f" – {subject}", {"kind": kind}, client_id=client_id)
 
 
 async def alarm_notifier():
@@ -657,11 +637,6 @@ async def lifespan(app: FastAPI):
     gateway.loop = asyncio.get_running_loop()
     auth.init(db)
     await auth.setup()
-    try:
-        if not LOGO_DIR:
-            await asyncio.to_thread(init_storage)
-    except Exception as e:
-        logger.error("Storage init failed: %s", e)
     await migrate_legacy()
     await load_broker()
     await load_registry()
@@ -871,7 +846,7 @@ async def upload_logo(client_id: str, file: UploadFile = File(...), user: dict =
         img.save(buf, "PNG")
     except Exception:
         raise HTTPException(422, "Unsupported image (PNG, JPEG or WEBP)")
-    res = await asyncio.to_thread(put_object, f"{STORAGE_APP}/logos/{client_id}/{uuid.uuid4().hex}.png", buf.getvalue(), "image/png")
+    res = await asyncio.to_thread(put_object, f"{STORAGE_APP}/logos/{client_id}/{uuid.uuid4().hex}.png", buf.getvalue())
     version = uuid.uuid4().hex[:8]
     await db.clients.update_one({"_id": c["_id"]}, {"$set": {"logo_path": res["path"], "logo_version": version}})
     return {"ok": True, "logo_version": version}
@@ -891,7 +866,7 @@ async def get_logo(client_id: str, user: dict = Depends(require("viewer"))):
     c = await client_or_404(client_id)
     if not c.get("logo_path"):
         raise HTTPException(404, "No logo")
-    data, ctype = await asyncio.to_thread(get_object, c["logo_path"])
+    data = await asyncio.to_thread(get_object, c["logo_path"])
     return Response(content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
 
@@ -928,7 +903,7 @@ async def public_logo(slug: str, size: int = 0):
     c = await client_by_slug(slug)
     if not c.get("logo_path"):
         raise HTTPException(404, "No logo")
-    data, _ = await asyncio.to_thread(get_object, c["logo_path"])
+    data = await asyncio.to_thread(get_object, c["logo_path"])
     if size in (180, 192, 512):
         data = await asyncio.to_thread(_square_icon, data, size, THEME_BG.get(c.get("theme", "green"), "#0A0A0A"))
     return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
@@ -1175,7 +1150,7 @@ async def get_alarm_settings(client_id: Optional[str] = None, user: dict = Depen
     cfg = await db.alarm_settings.find_one({"_id": cid}) or {}
     sent = await db.alarm_notifications.find({"client_id": cid}, {"_id": 0}).sort("ts", -1).to_list(10)
     return {"client_id": cid, "enabled": cfg.get("enabled", True), "recipients": cfg.get("recipients", []),
-            "channel_configured": False, "reminder_min": ALARM_REMIND_S // 60, "recent": sent}
+            "email_configured": notify.email_configured(), "sms_configured": notify.sms_configured(), "reminder_min": ALARM_REMIND_S // 60, "recent": sent}
 
 
 @api.put("/alarm-settings")

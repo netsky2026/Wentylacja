@@ -45,7 +45,8 @@ export const ChamberScreen = ({ ch, t, send, canControl }) => (
 
     <div className="reg-cell mb-3">
       <div className="flex items-center gap-1 mb-3" style={{ color: "var(--muted)", fontSize: 11 }}><Thermometer size={11} /> {t.ventilation}
-        <span data-testid={`chamber-${ch.id}-mode-badge`} style={{ marginLeft: "auto", color: ch.mode === "manual" ? "var(--warn-text)" : "var(--muted)" }}>
+        <span data-testid={`chamber-${ch.id}-mode-badge`} style={{ marginLeft: "auto", fontWeight: 600, letterSpacing: "0.04em", padding: "1px 7px", borderRadius: 999,
+          ...(ch.mode === "manual" ? { color: "var(--warn-text)", background: "var(--warn-bg)", border: "1px solid var(--warn-border)" } : { color: "var(--muted)" }) }}>
           {ch.mode === "manual" ? t.modeManual : t.modeAuto}</span></div>
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", alignItems: "end" }}>
         <CurtainWindow open={ch.curtain_left} label={t.curtainLeft} testid={`chamber-${ch.id}-curtain-left`} scale={1.3} />

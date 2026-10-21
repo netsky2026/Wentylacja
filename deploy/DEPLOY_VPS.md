@@ -94,6 +94,21 @@ docker compose restart backend
 
 ---
 
+## Powiadomienia o alarmach (e-mail / SMS) – opcjonalnie, w dowolnym momencie
+Bez tych kluczy aplikacja działa normalnie, a powiadomienia są tylko zapisywane (status „brak kanału”).
+W `nano .env` uzupełnij:
+- **E-mail (SMTP)** – dane od Twojej poczty (np. home.pl, OVH, Gmail z hasłem aplikacji):
+  `SMTP_HOST`, `SMTP_PORT` (587 lub 465), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` (adres nadawcy),
+  `SMTP_USE_SSL=true` tylko dla portu 465.
+- **SMS (SMSAPI.pl)** – załóż konto na smsapi.pl → *Tokeny API* → wygeneruj token z prawem wysyłki SMS:
+  `SMSAPI_TOKEN=...`, `SMSAPI_FROM=Test` (albo zatwierdzone w SMSAPI pole nadawcy, np. `Ferma`).
+
+Potem: `docker compose up -d backend` i w aplikacji **Ustawienia → Odbiorcy alarmów → Wyślij test**.
+Status każdego powiadomienia (wysłano / błąd / brak kanału) widać pod „Ostatnie powiadomienia”.
+
+---
+
+
 ## Aktualizacja aplikacji (po zmianach w Emergent)
 W czacie Emergent: **„Save to GitHub”**, potem na serwerze:
 ```bash

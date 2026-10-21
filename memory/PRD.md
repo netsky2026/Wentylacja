@@ -93,3 +93,12 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - VPS package /app/deploy: docker-compose (Caddy+backend+Mongo+Mosquitto dynsec), Dockerfiles, Caddyfile, mosquitto.conf.tpl, .env.example, DEPLOY_VPS.md (PL). Backend: MQTT_DYNSEC=1 auto-provisions per-device broker accounts/ACL; LOGO_DIR=local logo storage; MQTT_USER/MQTT_PASS env.
 - Tested iteration_14 (backend 34/34, frontend 100%); deploy files statically reviewed only (not run). Production yarn build verified.
 - Pending: Resend e-mail (needs API key).
+
+## 2026-06 update
+- Removed Emergent Object Storage dependency: logos always stored on local disk (LOGO_DIR env, required; preview: /app/backend/data/logos, VPS: docker volume /data/logos). Existing logo migrated.
+- Real alarm delivery: backend/notify.py — e-mail via SMTP (SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/USE_SSL), SMS via SMSAPI.pl (SMSAPI_TOKEN/SMSAPI_FROM). Keys optional; missing channel => status "not_configured". Per-notification status sent/failed/not_configured shown in UI. Docs in deploy/DEPLOY_VPS.md, keys in deploy/.env.example.
+- Light theme contrast: --warn-text/--warn-bg/--warn-border vars; RĘCZNY badge as pill; alarm banner uses theme vars.
+- Stale test_auth_security.py already absent.
+## Backlog
+- P1: User enters real SMTP/SMSAPI keys and tests delivery
+- P2: SMSAPI delivery callbacks, per-client alarm sender name

@@ -45,10 +45,11 @@ export const AlarmRecipientsCard = ({ t, clientId, clientName }) => {
           {cfg.enabled ? t.on : t.off}
         </label>
       </div>
-      {!cfg.channel_configured && (
-        <div className="flex gap-2" data-testid="alarm-mocked-banner" style={{ fontSize: 11, color: "var(--warn-text)", background: "rgba(201,164,106,0.08)",
-          border: "1px solid rgba(201,164,106,0.3)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {t.alarmMocked}
+      {(!cfg.email_configured || !cfg.sms_configured) && (
+        <div className="flex gap-2" data-testid="alarm-mocked-banner" style={{ fontSize: 11, color: "var(--warn-text)", background: "var(--warn-bg)",
+          border: "1px solid var(--warn-border)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          {t.alarmMocked.replace("{c}", [!cfg.email_configured && "E-mail (SMTP)", !cfg.sms_configured && "SMS (SMSAPI)"].filter(Boolean).join(", "))}
         </div>
       )}
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>{t.alarmRule.replace("{m}", cfg.reminder_min)}</div>
@@ -78,7 +79,9 @@ export const AlarmRecipientsCard = ({ t, clientId, clientName }) => {
           <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>{t.recentNotifications}</div>
           {cfg.recent.slice(0, 5).map((n, i) => (
             <div key={i} style={{ fontSize: 11, padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
-              <span style={{ color: "var(--muted)" }}>{new Date(n.ts).toLocaleString()} · {n.to}</span><br />{n.subject}
+              <span style={{ color: "var(--muted)" }}>{new Date(n.ts).toLocaleString()} · {n.to}</span>
+              <span data-testid={`alarm-recent-status-${i}`} style={{ marginLeft: 6, fontWeight: 600, color: n.status === "sent" ? "var(--green)" : n.status === "failed" ? "var(--accent)" : "var(--muted)" }}
+                title={n.error || ""}>{t[`notif_${n.status}`] || n.status}</span><br />{n.subject}
             </div>
           ))}
         </div>
