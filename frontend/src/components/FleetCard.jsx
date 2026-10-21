@@ -97,6 +97,7 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
   const [f, setF] = useState({ client_id: "", name: "", device_id: "", chambers: 3, simulated: false });
   const [creds, setCreds] = useState(null);
   const [brandOpen, setBrandOpen] = useState(null);
+  const [qrClient, setQrClient] = useState(null);
   const load = useCallback(async () => {
     try {
       const [c, d] = await Promise.all([axios.get(`${API}/clients`), axios.get(`${API}/devices`)]);
@@ -135,12 +136,17 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
 
   return (
     <div className="panel panel-pad" data-testid="fleet-card">
+      {qrClient && <QrDialog open onOpenChange={() => setQrClient(null)} t={t} link={`${window.location.origin}/?klient=${qrClient.slug}`}
+        slug={qrClient.slug} name={qrClient.display_name || qrClient.name}
+        logoSrc={qrClient.logo_version ? `${API}/public/logo/${qrClient.slug}?v=${qrClient.logo_version}` : siteLogoUrl(site)} />}
       <div className="flex items-center gap-2 font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}><Building2 size={16} /> {t.fleet}</div>
       {clients.map((c) => (
         <div key={c.id} className="reg-cell" style={{ marginBottom: 8, padding: "8px 10px" }} data-testid={`client-${c.id}`}>
           <div className="flex items-center justify-between">
             <span className="font-head" style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
             <div className="flex gap-1">
+              {c.slug && <button className="sp-btn" onClick={() => setQrClient(c)} data-testid={`client-qr-${c.id}`} aria-label="QR"
+                style={{ width: "auto", padding: "0 8px", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--primary)" }}><QrCode size={13} /> QR</button>}
               <button className="sp-btn" onClick={() => setBrandOpen(brandOpen === c.id ? null : c.id)} data-testid={`client-brand-${c.id}`}
                 aria-label={t.branding} style={{ color: brandOpen === c.id ? "var(--primary)" : undefined }}><Palette size={13} /></button>
               <button className="sp-btn" onClick={() => delClient(c)} data-testid={`client-delete-${c.id}`} aria-label="delete"><Trash2 size={13} /></button>

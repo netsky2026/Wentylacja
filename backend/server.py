@@ -638,6 +638,7 @@ async def lifespan(app: FastAPI):
     auth.init(db)
     await auth.setup()
     await migrate_legacy()
+    await migrate_slugs()
     await load_broker()
     await load_registry()
     await db.plc_history.create_index([("device_id", 1), ("ts", 1)])
@@ -804,11 +805,30 @@ async def list_clients(user: dict = Depends(require("superadmin"))):
     return {"clients": out}
 
 
+PL_MAP = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+
+
+async def unique_slug(name: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.translate(PL_MAP).lower()).strip("-")[:34].strip("-")
+    base = base if len(base) >= 2 else "ferma"
+    slug, n = base, 2
+    while await db.clients.find_one({"slug": slug}):
+        slug, n = f"{base}-{n}", n + 1
+    return slug
+
+
+async def migrate_slugs():
+    async for c in db.clients.find({"$or": [{"slug": {"$exists": False}}, {"slug": ""}, {"slug": None}]}):
+        await db.clients.update_one({"_id": c["_id"]}, {"$set": {"slug": await unique_slug(c.get("name", ""))}})
+
+
 @api.post("/clients")
 async def create_client(body: ClientIn, user: dict = Depends(require("superadmin"))):
-    res = await db.clients.insert_one({"name": body.name.strip(), "created_at": now_iso()})
-    await log_event("info", f"Dodano klienta: {body.name.strip()}", {"user": user["email"]}, client_id=str(res.inserted_id))
-    return {"id": str(res.inserted_id), "name": body.name.strip(), "devices": 0}
+    name = body.name.strip()
+    slug = await unique_slug(name)
+    res = await db.clients.insert_one({"name": name, "slug": slug, "created_at": now_iso()})
+    await log_event("info", f"Dodano klienta: {name}", {"user": user["email"]}, client_id=str(res.inserted_id))
+    return {"id": str(res.inserted_id), "name": name, "slug": slug, "devices": 0}
 
 
 async def client_or_404(client_id: str) -> dict:

@@ -81,7 +81,6 @@ info "Krok 5/6: buduję i uruchamiam aplikację (pierwszy raz 5–10 minut)…"
 if ! docker compose run --rm --entrypoint "" mosquitto test -f /mosquitto/data/dynamic-security.json; then
   docker compose run --rm --entrypoint "" mosquitto \
     mosquitto_ctrl dynsec init /mosquitto/data/dynamic-security.json admin "$MQTT_PASS" >/dev/null
-  NEW_BROKER=1
 fi
 docker compose up -d --build web backend mongo
 
@@ -96,14 +95,13 @@ ok "Certyfikat HTTPS gotowy"
 info "Krok 6/6: broker MQTT dla sterowników"
 docker compose up -d mosquitto
 sleep 5
-if [ "${NEW_BROKER:-}" = 1 ]; then
-  C="docker compose exec -T mosquitto mosquitto_ctrl -h localhost -p 1883 -u admin -P $MQTT_PASS dynsec"
-  $C createRole gateway
-  $C addRoleACL gateway publishClientSend "$MQTT_PREFIX/#" allow
-  $C addRoleACL gateway publishClientReceive "$MQTT_PREFIX/#" allow
-  $C addRoleACL gateway subscribePattern "$MQTT_PREFIX/#" allow
-  $C addClientRole admin gateway
-fi
+C="docker compose exec -T mosquitto mosquitto_ctrl -h localhost -p 1883 -u admin -P $MQTT_PASS dynsec"
+for i in $(seq 1 12); do $C getClient admin >/dev/null 2>&1 && break; sleep 5; done
+$C createRole gateway >/dev/null 2>&1 || true
+for a in publishClientSend publishClientReceive subscribePattern; do $C addRoleACL gateway $a "$MQTT_PREFIX/#" allow >/dev/null 2>&1 || true; done
+$C addClientRole admin gateway >/dev/null 2>&1 || true
+$C getRole gateway | grep -q "$MQTT_PREFIX/#" || die "Nie udało się ustawić uprawnień brokera. Logi: docker compose logs mosquitto"
+ok "Broker gotowy (uprawnienia sprawdzone)"
 docker compose restart backend >/dev/null
 
 ( crontab -l 2>/dev/null | grep -v wentylacja-backup ; \
