@@ -20,13 +20,13 @@ const DeviceCard = ({ d, st, t, onOpen }) => {
           <ChevronRight size={16} color="var(--muted)" />
         </div>
       </div>
-      <div className="grid gap-1" style={{ width: "100%", gridTemplateColumns: `repeat(${Math.min(5, Math.max(chambers.length, 1))}, 1fr)` }}>
+      <div className="grid gap-1" style={{ width: "100%", gridTemplateColumns: `repeat(${chambers.length <= 5 ? Math.max(chambers.length, 1) : Math.ceil(chambers.length / 2)}, 1fr)` }}>
         {chambers.map((c) => (
           <div key={c.id} className="reg-cell" style={{ padding: "6px 4px", textAlign: "center", opacity: c.on ? 1 : 0.5,
             borderColor: c.alarm ? "var(--accent)" : undefined }} data-testid={`overview-${d.device_id}-ch-${c.id}`}>
             <div style={{ fontSize: 9, color: "var(--muted)" }}>{t.chamberShort}{c.id + 1}</div>
             <div className="font-head" style={{ fontSize: 15, fontWeight: 700, color: c.temp_alarm ? "var(--accent)" : "var(--text)" }}>{c.temp.toFixed(1)}°</div>
-            <div style={{ fontSize: 9, color: c.co2_alarm ? "var(--accent)" : "var(--muted)" }}>{Math.round(c.co2)}</div>
+            <div style={{ fontSize: 9, color: c.co2_alarm ? "var(--accent)" : "var(--muted)" }}>{Math.round(c.co2)} ppm</div>
           </div>
         ))}
         {chambers.length === 0 && <div style={{ fontSize: 11, color: "var(--muted)" }}>{t.waitingData}</div>}

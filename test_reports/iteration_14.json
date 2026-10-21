@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 14: tested the overview dashboard, client links/public branding, the per-client PWA manifest/icons and tenant isolation, plus a static review of the deploy package. Backend: new pytest file with 20 tests, all passing (public branding/logo/manifest incl. 404s, square PNG icons at 180/192/512, original logo <=256, slug 422/409, set/clear slug, unauth 401, client user sees only own device, non-simulated device offline, device create/delete works with dynsec as a no-op). test_multitenant.py regression passed 14/14. Frontend at 390x844, all checked flows PASS: (1) ?klient=kowalski gives the Kowalski logo, title 'Kowalski Wentylacja', amber theme, and the manifest link, apple-touch-icon and document.title switch; the slug is kept in localStorage across a reload; ?klient=nieistnieje gives default branding and the key is removed. (2) Superadmin sees nav-overview; cards are sorted alarms-first (chlodnia-01 with chamber 2 threshold lowered shows overview-alarms badge '1' and a red cell); the non-simulated TEST device shows 'offline' plus waiting text; tapping a card selects the device, opens Komory and switches branding. (3) BrandEditor: invalid slug toast, duplicate 'kowalski' toast 'Ten link jest już zajęty', save shows brand-link https://<host>/?klient=test-ui-mp, copy puts the right URL on the clipboard, clearing hides the link. (4) Kowalski operator sees overview with only Kowalski devices; Marco Polo operator (1 device) has no nav-overview and gets the green/default branding. Regression for device switching, Dane charts, Ustawienia and the fleet card: OK. Deploy static review found one blocking problem: Mosquitto cannot read the Caddy TLS key.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/app/backend/tests/test_auth_security.py", "issue": "This legacy pre-multitenant suite is stale (18 failures: old endpoints like /usage/daily and /simulator/toggle, plus single-device state assumptions). These are not app regressions; the suite should be deleted or rewritten."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Overview (Przegląd)", "issues": [
+        "The DevicePicker and status bar ('Sterownik offline') above the overview still describe the currently selected device. That is confusing on a fleet-wide screen; hide them in the overview view or show fleet totals instead.",
+        "6-chamber devices use a 5-column grid, so K6 wraps alone onto a second row. Use 3 or 6 columns (e.g. cols = n<=5 ? n : Math.ceil(n/2)).",
+        "Mini cells show the CO2 number without a unit (e.g. '2217'). Add 'ppm' or a CO2 label."
+      ]},
+      {"screen": "Default device selection", "issues": ["Devices are sorted by name, so 'TEST_offline' came before 'Tuczarnia A' and a user with no saved device landed on an offline device ('waiting for data'). Prefer the first online device as the default."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration14_branding_overview.py", "/app/test_reports/pytest/pytest_it14.xml"],
+  "action_items": [
+    "CRITICAL (deploy): Mosquitto 2.x drops privileges to the 'mosquitto' user before it loads the TLS cert/key, and Caddy stores private keys as root 0600 in caddy_data. The 8883 listener will therefore fail with 'Unable to load server key file'. Fix in the mosquitto command: copy the cert and key into /mosquitto/certs/, chown mosquitto:mosquitto, chmod 600, then point certfile/keyfile in mosquitto.conf.tpl at /mosquitto/certs/. The weekly restart cron then re-copies the renewed cert.",
+    "Deploy doc step 6: 'docker compose up -d web backend mongo' also starts mosquitto, because backend has depends_on: mosquitto. Mosquitto then restart-loops until Caddy has the cert. This is harmless but contradicts the doc; either remove mosquitto from backend depends_on or reword step 6/7.",
+    "Deploy: the cert path is hardcoded to the Let's Encrypt issuer directory (acme-v02.api.letsencrypt.org-directory). If Caddy falls back to ZeroSSL, the path changes (acme.zerossl.com-v2-dv90). Mention this in 'Problemy', or pin the issuer in the Caddyfile (tls { issuer acme }).",
+    "Overview UX: hide the device picker/status bar in the overview, and fix the 6-chamber grid and the CO2 unit (see design_issues).",
+    "Optional: on the login screen, a ?klient= value with an invalid format (e.g. ?klient=BAD) is ignored and the previously stored slug's branding stays. Decide whether it should clear the stored slug.",
+    "Delete or rewrite the stale backend/tests/test_auth_security.py."
+  ],
+  "critical_code_review_comments": [
+    "server.py patch_client: slug uniqueness is only checked in app code (find_one, then update), so there is a race. Add a unique partial index on clients.slug (partialFilterExpression slug: {$gt: ''}).",
+    "server.py public_logo: size values other than 180/192/512 silently return the original image. Fine, but a 422 would be clearer.",
+    "dynsec_add_device sends deleteClient before createClient, so the first provisioning returns an error entry for the delete. This is harmless (dynsec processes commands independently), but the backend never reads the $CONTROL/dynamic-security/v1/response topic, so provisioning failures are invisible. Consider subscribing and logging errors.",
+    "Devices that exist before MQTT_DYNSEC=1 is enabled (e.g. after a DB restore/migration) never get broker accounts. Consider a startup reconcile or a 'reprovision' button.",
+    "App.js usePublicBrand: .catch removes brand_slug on any error, including network/5xx. Only remove it on a 404.",
+    "Cookies are SameSite=None; Secure; Partitioned. That works on the same-origin VPS behind HTTPS; on the VPS, SameSite=Lax would be the stricter choice.",
+    "Playwright note: on the Dane view, a normal click on nav-settings timed out at 'scrolling into view' although elementFromPoint returns the button and force-click works. This looks like a tooling quirk with fixed nav plus live charts, not a user-facing bug."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration14_branding_overview.py"],
+  "success_rate": {"backend": "100% (20/20 new, 14/14 multitenant regression)", "frontend": "100% of requested flows; 3 minor design issues"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026 (from /app/memory/test_credentials.md). bcrypt $2b$ verified, httpOnly Secure cookies set, CORS has an explicit origin and credentials=true.",
+  "seed_data_creation": "Temporary only, all removed: device test-ui-off (Kowalski) and test-it14-off, users test_ui_mp/test_ui_kw/test_it14_viewer, Marco Polo slug test-mp/test-ui-mp (reset to ''), chlodnia-01 chamber 1 temp_max=5 (restored to 28/3000). Superadmin theme was 'blue' at start and was reset to null via PUT /api/auth/preferences. login_attempts cleared.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Client IDs: Ferma Kowalski 6ad7dcc3261e5ba3c23315b7 (slug kowalski, amber, logo 985bf926, device kowalski-a with 6 chambers); Marco Polo 6ad7dcb08b38a7c48f3db7d2 (slug '', device chlodnia-01 with 3 chambers). Run REACT_APP_BACKEND_URL=... pytest test_iteration14_branding_overview.py (pytest.ini adds xdist). User theme endpoint: PUT /api/auth/preferences {theme}. To trigger an overview alarm, PUT /api/devices/chlodnia-01/thresholds/1 {temp_max:5,co2_max:3000} and restore afterwards. Deploy was reviewed statically only (docker was not run).",
+  "rca of the issue": "Mosquitto TLS: since 2.0, mosquitto reads cert/key files after dropping root privileges (see mosquitto.org/documentation/migrating-to-2-0). Caddy writes its ACME private keys with mode 0600 owned by root in /data (mounted read-only at /caddy). The mosquitto user therefore cannot open the keyfile and the broker exits. The docker-entrypoint chown only covers /mosquitto, not /caddy. Mitigation: copy and chown the cert/key into /mosquitto/certs in the compose command before exec mosquitto."
+}

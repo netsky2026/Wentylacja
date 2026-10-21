@@ -87,7 +87,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
     } catch (e) { /* noop */ }
   }, []);
 
-  const dev = devices?.find((d) => d.device_id === deviceId) || devices?.[0];
+  const dev = devices?.find((d) => d.device_id === deviceId) || devices?.find((d) => d.online) || devices?.[0];
   useEffect(() => {
     if (devices && deviceId && !devices.some((d) => d.device_id === deviceId)) localStorage.removeItem("device");
   }, [devices, deviceId]);
@@ -211,11 +211,11 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
           </div>
         </header>
 
-        {devices && devices.length > 0 && (
+        {devices && devices.length > 0 && view !== "overview" && (
           <DevicePicker devices={devices} value={devId} onChange={pickDevice} t={t} states={states} />
         )}
 
-        <div className="panel flex items-center justify-between mb-3" data-testid="status-bar" style={{ padding: "9px 14px" }}>
+        {view !== "overview" && <div className="panel flex items-center justify-between mb-3" data-testid="status-bar" style={{ padding: "9px 14px" }}>
           <span className="flex items-center gap-2" style={{ fontSize: 12 }}>
             <span className={`led ${brokerConnected ? "ok" : "warn pulse"}`} />
             {brokerConnected ? t.brokerConnected : t.brokerDisconnected}
@@ -224,7 +224,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
             <span className={`led ${online ? "ok" : "warn"}`} />
             {online ? t.deviceOnline : t.deviceOffline}
           </span>
-        </div>
+        </div>}
 
         {(view === "chambers" || view === "data") && chambers.length > 0 && (
           <ChamberSwitch chambers={chambers} selected={ch?.id} setSelected={setSelected} t={t} />

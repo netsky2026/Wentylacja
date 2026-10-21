@@ -86,3 +86,10 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Client branding (superadmin, Fleet card → palette): display_name, default theme, logo (Emergent Object Storage, resized 256px PNG; GET /api/clients/{id}/logo auth-scoped). /api/branding, PUT /api/auth/preferences.
 - Tested iteration_12/13. Note: storage has no delete API → replaced logos are orphaned (tiny).
 - VPS note: object storage uses EMERGENT_LLM_KEY; on own VPS swap to local disk/S3.
+
+## 2026-06 Update 9
+- Overview tab (Przegląd) for users with >1 device: all controllers, alarms first, mini chamber cells; tap opens device.
+- Client link /?klient=<slug>: public branding/logo/manifest endpoints (/api/public/*), login screen + PWA icon/name per client; slug editor in BrandEditor.
+- VPS package /app/deploy: docker-compose (Caddy+backend+Mongo+Mosquitto dynsec), Dockerfiles, Caddyfile, mosquitto.conf.tpl, .env.example, DEPLOY_VPS.md (PL). Backend: MQTT_DYNSEC=1 auto-provisions per-device broker accounts/ACL; LOGO_DIR=local logo storage; MQTT_USER/MQTT_PASS env.
+- Tested iteration_14 (backend 34/34, frontend 100%); deploy files statically reviewed only (not run). Production yarn build verified.
+- Pending: Resend e-mail (needs API key).

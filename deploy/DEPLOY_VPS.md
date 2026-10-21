@@ -136,4 +136,5 @@ Bramka **odbiera** komendy z tematu `PREFIX/ID_STEROWNIKA/command`:
 ## Problemy
 - Logi: `docker compose logs -f backend` (lub `web`, `mosquitto`).
 - Strona nie działa → sprawdź rekord DNS i czy porty 80/443 są otwarte.
-- Broker się restartuje → certyfikat jeszcze nie pobrany: najpierw musi działać strona (krok 6).
+- Broker się restartuje → certyfikat jeszcze nie pobrany: najpierw musi działać strona (krok 6), potem `docker compose restart mosquitto`.
+- Broker szuka certyfikatu w katalogu Caddy (`/caddy/caddy/certificates/<wystawca>/<domena>`) – działa zarówno z Let's Encrypt, jak i ZeroSSL.

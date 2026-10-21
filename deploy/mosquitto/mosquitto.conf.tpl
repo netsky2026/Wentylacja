@@ -11,5 +11,5 @@ listener 1883 0.0.0.0
 
 # external TLS listener for PLC gateways; certificate obtained by Caddy for the domain
 listener 8883 0.0.0.0
-certfile /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/__DOMAIN__/__DOMAIN__.crt
-keyfile /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/__DOMAIN__/__DOMAIN__.key
+certfile /mosquitto/certs/server.crt
+keyfile /mosquitto/certs/server.key

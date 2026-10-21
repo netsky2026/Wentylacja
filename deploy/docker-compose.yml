@@ -11,7 +11,10 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
     command: >
-      sh -c "sed \"s/__DOMAIN__/$$DOMAIN/g\" /mosquitto/config/mosquitto.conf.tpl > /mosquitto/config/mosquitto.conf
+      sh -c "D=$$(ls -d /caddy/caddy/certificates/*/$$DOMAIN | head -1)
+      && mkdir -p /mosquitto/certs && cp $$D/$$DOMAIN.crt /mosquitto/certs/server.crt && cp $$D/$$DOMAIN.key /mosquitto/certs/server.key
+      && chown -R mosquitto:mosquitto /mosquitto/certs && chmod 600 /mosquitto/certs/server.key
+      && cp /mosquitto/config/mosquitto.conf.tpl /mosquitto/config/mosquitto.conf
       && exec mosquitto -c /mosquitto/config/mosquitto.conf"
     ports:
       - "8883:8883"
@@ -37,7 +40,6 @@ services:
       - logos:/data/logos
     depends_on:
       - mongo
-      - mosquitto
 
   web:
     build:
