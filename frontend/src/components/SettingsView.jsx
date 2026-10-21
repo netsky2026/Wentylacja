@@ -64,6 +64,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="settings-view">
       <AccountCard t={t} user={user} onLogout={onLogout} onUserChange={onUserChange} clientTheme={clientTheme} />
+      {user.role === "superadmin" && <FleetCard t={t} reloadDevices={reloadDevices} site={site} />}
       {canControl && dev && chambers.length > 0 && <>
         <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint} · {dev.client_name} · {dev.name}</div>
         {chambers.map((ch) => (
@@ -87,7 +88,6 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
         <UsersCard key={`u-${clientId}`} t={t} me={user} clientId={clientId} clientName={dev?.client_name} />
       </>}
       {user.role === "superadmin" && <>
-        <FleetCard t={t} reloadDevices={reloadDevices} site={site} />
         <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
         <SiteCard t={t} site={site} reloadSite={reloadSite} />
       </>}

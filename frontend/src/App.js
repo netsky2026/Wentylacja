@@ -253,7 +253,16 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
         )}
 
         {devices && devices.length === 0 && view !== "settings" ? (
-          <div className="panel panel-pad" data-testid="no-devices" style={{ color: "var(--muted)", textAlign: "center", fontSize: 13 }}>{t.noDevices}</div>
+          user.role === "superadmin" ? (
+            <div className="panel panel-pad" data-testid="no-devices-admin" style={{ textAlign: "center" }}>
+              <div className="font-head" style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>{t.firstFarmTitle}</div>
+              <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 14 }}>{t.firstFarmHint}</div>
+              <button className="action-btn" data-testid="add-first-farm" onClick={() => setView("settings")}
+                style={{ background: "var(--primary)", borderColor: "var(--primary)", color: "var(--on-primary)", fontWeight: 700, padding: "10px 18px", margin: "0 auto" }}>
+                {t.addClient}
+              </button>
+            </div>
+          ) : <div className="panel panel-pad" data-testid="no-devices" style={{ color: "var(--muted)", textAlign: "center", fontSize: 13 }}>{t.noDevices}</div>
         ) : view === "overview" && devices ? (
           <OverviewView t={t} devices={devices} states={states} onOpen={(id) => { pickDevice(id); setView("chambers"); }} />
         ) : view === "settings" ? (
