@@ -61,7 +61,7 @@ const BrandEditor = ({ c, t, onChanged, site }) => {
       <div className="flex items-center gap-2">
         <div style={{ width: 44, height: 44, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)",
           display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-          <img src={c.logo_version ? `${API}/clients/${c.id}/logo?v=${c.logo_version}` : "/icon-192.png"} alt=""
+          <img src={c.logo_version ? `${API}/clients/${c.id}/logo?v=${c.logo_version}` : siteLogoUrl(site)} alt=""
             data-testid={`brand-logo-preview-${c.id}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
         </div>
         <label className="action-btn" style={{ padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>

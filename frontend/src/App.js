@@ -40,10 +40,11 @@ const useSite = () => {
   const [site, setSite] = useState(null);
   const load = useCallback(() => axios.get(`${API}/public/site`).then(({ data }) => {
     setSite(data);
-    if (localStorage.getItem("brand_slug") || !data.logo_version) return;
-    setHeadLink('link[rel="manifest"]', "href", `${API}/public/manifest?v=${data.logo_version}`);
-    setHeadLink('link[rel="apple-touch-icon"]', "href", siteLogoUrl(data, 180));
-    setHeadLink('link[rel="icon"]', "href", siteLogoUrl(data, 32));
+    if (localStorage.getItem("brand_slug")) return;
+    const v = data.logo_version;
+    setHeadLink('link[rel="manifest"]', "href", v ? `${API}/public/manifest?v=${v}` : "/manifest.json");
+    setHeadLink('link[rel="apple-touch-icon"]', "href", v ? siteLogoUrl(data, 180) : "/apple-touch-icon.png");
+    setHeadLink('link[rel="icon"]', "href", v ? siteLogoUrl(data, 32) : "/favicon-32.png");
   }).catch(() => {}), []);
   useEffect(() => { load(); }, [load]);
   return [site, load];

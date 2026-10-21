@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 15: tested the welcome page ('wizytówka'), the platform site settings (phone/email/logo), the site and client manifest icon fallback, the per-client QR poster, and regression. Backend: new pytest file test_iteration15_site_welcome.py, 18/18 pass. Covered: GET /public/site shape; PUT /site, POST /site/logo and DELETE /site/logo return 401 unauthenticated, 403 for a client admin and 403 with a foreign Origin; phone/email save is trimmed and persisted, then cleared; invalid phone 'abc', invalid email, 'a;b' multi-email and phone >40 chars all return 422; upload, then the original is <=256px and size=32/180/192/512 return square PNGs; /public/manifest uses the site logo icons; a client without its own logo (temporary slug on Marco Polo) falls back to site logo icons; the Kowalski manifest keeps its own logo; a non-image returns 422 and >1MB returns 413; delete gives logo_version null, logo 404 and manifest back to /icon-192.png; alarm-settings returns email_configured and sms_configured false. Regression: test_multitenant.py and test_iteration14 also pass (52/52 total). Frontend at 390x844, all requested flows pass: (1) a guest with cleared localStorage sees welcome-page-container with logo, title 'MARCO POLO WENTYLACJA', login button and PL/EN switch (EN shows 'SIGN IN'); the contact block is hidden when empty; Zaloguj opens login-form, and login-back returns to the welcome page. (2) /?klient=kowalski goes straight to the login with the Kowalski logo, title and amber theme; there is no welcome page and no back button, and the slug persists for later visits to /. (3) SiteCard: phone 'abc' gives the toast 'Nieprawidłowy e-mail lub numer telefonu' and nothing is saved; a valid phone/email saves ('Zapisano') and then appears on the welcome page (tel:+48600100200, mailto:); the logo upload updates site-logo-preview, shows site-logo-remove and switches the favicon/manifest head links; app-logo uses the site logo for the Marco Polo device (no client logo) and the Kowalski logo for the Kowalski device; the login and welcome pages use the site logo; removing it restores /icon-192.png. (4) QR: client-brand then brand-qr-<KowalskiId> opens qr-dialog; qr-image is a PNG data URL; qr-download has download=qr-kowalski.png and the downloaded file name matches; the poster shows the Kowalski logo, QR, name and link; the QR was decoded with OpenCV to https://fatek-mqtt.preview.emergentagent.com/?klient=kowalski. State is restored: site logo deleted, phone/email empty, Kowalski unchanged, temporary slug removed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/site/logo, POST /api/clients/{id}/logo, DELETE ...", "issue": "Old logo files are never removed from LOGO_DIR. Each upload writes a new uuid.png and delete only $unsets the DB fields, so orphan files pile up on disk. Delete the previous logo_path file on replace and on delete."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App.js useSite", "issue": "After the superadmin removes the site logo, the <link rel=icon>, apple-touch-icon and manifest head links still point at /api/public/site/logo?size=32&v=<old> (now 404) until a full reload. Cause: load() returns early when !data.logo_version and never resets the links to /favicon, /icon-192.png and the default manifest.", "selector": "link[rel=icon]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Welcome page", "issues": [
+        "The welcome page inherits the last-used theme from localStorage. After a superadmin with the blue theme logs out, the guest welcome page is blue instead of the brand green. Consider forcing the default/site theme on the welcome page for guests.",
+        "The header label next to the logo reads 'FATEK · MQTT', a technical controller/protocol name, on a customer-facing business card. Consider 'Marco Polo' or dropping it."
+      ]},
+      {"screen": "Settings > BrandEditor", "issues": ["brand-logo-preview-<id> for a client without its own logo falls back to /icon-192.png, but the app, QR and manifest actually fall back to the site logo. Use siteLogoUrl(site) for consistency."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration15_site_welcome.py", "/app/test_reports/pytest/pytest_it15.xml"],
+  "action_items": [
+    "LOW: in useSite, when logo_version is null and no brand_slug is set, reset the head links (icon, apple-touch-icon, manifest) to the defaults.",
+    "LOW: delete the old logo file from LOGO_DIR on replace and on delete, for both the site and client logos.",
+    "Optional design: use a fixed default theme on the guest welcome page; reconsider the 'FATEK · MQTT' label; make the BrandEditor logo-preview fallback use the site logo."
+  ],
+  "critical_code_review_comments": [
+    "server.py site_settings uses _id 'main' (a string), which is fine. /public/site never leaks _id.",
+    "QrDialog: the poster uses a 'Barlow Condensed' canvas font. If the webfont has not loaded when the dialog first opens, the name falls back to sans-serif. Consider await document.fonts.ready before drawing.",
+    "QrDialog renders the data URL only after async drawing, and until then the qr-download <a> has no href; clicking it early does nothing. Acceptable, but consider disabling it until ready.",
+    "The review request mentioned the slug 'fatek-mqtt', but no client has that slug (404). The fallback was verified with a temporary slug on Marco Polo instead."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration15_site_welcome.py"],
+  "success_rate": {"backend": "100% (18/18 new, 52/52 including regression)", "frontend": "100% of requested flows; 1 low-priority bug, minor design notes"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026 works. Cookies are set with CORS on an explicit origin and credentials=true. A temporary client admin test_it15_admin@example.com was created and deleted by the fixture.",
+  "seed_data_creation": "None persistent. A temporary slug test-it15-mp on Marco Polo was reset to ''. The temporary user was deleted. The site logo was deleted and phone/email cleared (the requested final state).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=<url> python -m pytest tests/test_iteration15_site_welcome.py -n 0. Superadmin GET /api/alarm-settings requires ?client_id=. QR decode: save the qr-image data URL and use cv2.QRCodeDetectorAruco or crop the QR region (opencv was installed temporarily and uninstalled). Kowalski id 6ad7dcc3261e5ba3c23315b7 (slug kowalski, logo 985bf926); Marco Polo id 6ad7dcb08b38a7c48f3db7d2 (no slug, no logo; device chlodnia-01)."
+}

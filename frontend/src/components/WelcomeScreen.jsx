@@ -1,4 +1,5 @@
 import { LogIn, Phone, Mail, Thermometer, Droplets, Wind } from "lucide-react";
+import { useEffect } from "react";
 import { siteLogoUrl } from "@/api";
 
 const Contact = ({ site }) => {
@@ -12,6 +13,7 @@ const Contact = ({ site }) => {
 };
 
 export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
+  useEffect(() => { document.documentElement.dataset.theme = "green"; }, []);
   const pills = [[Thermometer, t.welcomeTemp], [Droplets, t.humidity], [Wind, "CO₂"]];
   return (
     <div className="welcome-page" data-testid="welcome-page-container">
@@ -20,7 +22,7 @@ export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
         <header className="flex items-center justify-between welcome-rise">
           <div className="flex items-center gap-3">
             <img src={siteLogoUrl(site)} alt="" data-testid="welcome-brand-logo" style={{ width: 44, height: 44, borderRadius: 12, objectFit: "contain" }} />
-            <span className="font-head" style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>Fatek · MQTT</span>
+            <span className="font-head" style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>Marco Polo</span>
           </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>
             {["pl", "en"].map((l) => (
