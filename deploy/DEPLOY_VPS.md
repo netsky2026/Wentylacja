@@ -1,5 +1,8 @@
 # Uruchomienie „Marco Polo Wentylacja” na własnym serwerze VPS
 
+> **Początkujący:** użyj prostszej instrukcji `INSTRUKCJA_PROSTA.md` i automatycznego instalatora `install.sh`.
+> Poniżej jest wersja ręczna dla zaawansowanych.
+
 Instrukcja dla serwera z **Ubuntu 22.04 lub 24.04** (OVH, Hetzner, Contabo, home.pl itp.).
 Wystarczy: 2 vCPU, 2–4 GB RAM, 40 GB dysku.
 

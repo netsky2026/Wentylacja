@@ -102,3 +102,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 ## Backlog
 - P1: User enters real SMTP/SMSAPI keys and tests delivery
 - P2: SMSAPI delivery callbacks, per-client alarm sender name
+- 2026-06: deploy/install.sh (one-command Ubuntu installer: docker, ufw, .env generation, DNS check, dynsec init w/ password arg, cert wait, ACL, backup cron), deploy/update.sh, deploy/INSTRUKCJA_PROSTA.md (layman guide: OVH VPS, domain, DNS A, GitHub token, SSH). Not executed end-to-end (no Docker in preview) — user to run on VPS.
