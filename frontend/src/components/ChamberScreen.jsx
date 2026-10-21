@@ -1,6 +1,7 @@
 import { Thermometer, Droplets, Wind, Power, Flame, AlertTriangle, Target } from "lucide-react";
 import { CurtainWindow, ChimneyGauge } from "@/components/Gauges";
 import { VentControl } from "@/components/VentControl";
+import { ChamberNameEdit } from "@/components/ChamberNameEdit";
 
 const Sensor = ({ icon, label, value, unit, warn, testid }) => (
   <div className="sensor" data-testid={testid}>
@@ -11,13 +12,13 @@ const Sensor = ({ icon, label, value, unit, warn, testid }) => (
   </div>
 );
 
-export const ChamberScreen = ({ ch, t, send, canControl }) => (
+export const ChamberScreen = ({ ch, t, send, canControl, dev, canRename, onRenamed }) => (
   <div className={`panel panel-pad fade-in ${ch.alarm ? "alarm-card" : ""}`} data-testid={`chamber-${ch.id}-screen`}
     style={{ opacity: ch.on ? 1 : 0.75 }}>
     <div className="flex items-center justify-between mb-3">
-      <span className="flex items-center gap-2">
+      <span className="flex items-center gap-2" style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
         <span className={`led ${ch.on ? "ok" : "warn"}`} />
-        <span className="font-head" style={{ fontSize: 22, fontWeight: 700 }}>{t.chamberWord} {ch.id + 1}</span>
+        <ChamberNameEdit t={t} dev={dev} id={ch.id} size={22} editable={canRename} onSaved={onRenamed} />
       </span>
       <span className="flex items-center gap-2">
         {ch.alarm && <span className="badge badge-alarm" data-testid={`chamber-${ch.id}-alarm`}><AlertTriangle size={12} /> {t.alarm}</span>}

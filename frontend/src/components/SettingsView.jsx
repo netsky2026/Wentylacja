@@ -5,10 +5,11 @@ import { InstallCard } from "@/components/InstallCard";
 import { AccountCard, UsersCard } from "@/components/AccountCards";
 import { AlarmRecipientsCard } from "@/components/AlarmRecipientsCard";
 import { FleetCard } from "@/components/FleetCard";
+import { ChamberNameEdit } from "@/components/ChamberNameEdit";
 import { SiteCard } from "@/components/SiteCard";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
-const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
+const ChamberSettings = ({ ch, th, t, send, saveThreshold, dev, canRename, onRenamed }) => {
   const [tmax, setTmax] = useState("");
   const [cmax, setCmax] = useState("");
   const [saved, setSaved] = useState(false);
@@ -30,7 +31,7 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
   };
   return (
     <div className="panel panel-pad" data-testid={`settings-chamber-${ch.id}`}>
-      <div className="font-head" style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{t.chamberWord} {ch.id + 1}</div>
+      <div style={{ marginBottom: 10 }}><ChamberNameEdit t={t} dev={dev} id={ch.id} editable={canRename} onSaved={onRenamed} /></div>
       <div className="flex items-center justify-between reg-cell mb-3" style={{ padding: "8px 12px" }}>
         <span style={{ color: "var(--muted)", fontSize: 12 }}>{t.setpoint}</span>
         <div className="flex items-center gap-3">
@@ -68,7 +69,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
       {canControl && dev && chambers.length > 0 && <>
         <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint} · {dev.client_name} · {dev.name}</div>
         {chambers.map((ch) => (
-          <ChamberSettings key={`${dev.device_id}-${ch.id}`} ch={ch} t={t} send={send} saveThreshold={saveThreshold}
+          <ChamberSettings key={`${dev.device_id}-${ch.id}`} ch={ch} t={t} send={send} saveThreshold={saveThreshold} dev={dev} canRename={isAdmin} onRenamed={reloadDevices}
             th={thresholds.find((x) => x.chamber === ch.id)} />
         ))}
       </>}

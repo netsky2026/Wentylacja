@@ -249,7 +249,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
         </div>}
 
         {(view === "chambers" || view === "data") && chambers.length > 0 && (
-          <ChamberSwitch chambers={chambers} selected={ch?.id} setSelected={setSelected} t={t} />
+          <ChamberSwitch chambers={chambers} selected={ch?.id} setSelected={setSelected} t={t} dev={dev} />
         )}
 
         {devices && devices.length === 0 && view !== "settings" ? (
@@ -273,9 +273,10 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
         ) : chambers.length === 0 ? (
           <div className="panel panel-pad" style={{ color: "var(--muted)", textAlign: "center", fontSize: 13 }}>{dev ? t.waitingData : "…"}</div>
         ) : view === "chambers" ? (
-          ch && <ChamberScreen key={`${devId}-${ch.id}`} ch={ch} t={t} send={send} canControl={canControl} />
+          ch && <ChamberScreen key={`${devId}-${ch.id}`} ch={ch} t={t} send={send} canControl={canControl} dev={dev}
+            canRename={["admin", "superadmin"].includes(user.role)} onRenamed={loadDevices} />
         ) : (
-          <DataView t={t} ch={ch} deviceId={devId} plant={state?.plant} history={history} plantHistory={plantHistory} events={events} />
+          <DataView t={t} ch={ch} deviceId={devId} plant={state?.plant} history={history} plantHistory={plantHistory} events={events} dev={dev} />
         )}
       </div>
       <BottomNav view={view} setView={setView} t={t} showOverview={(devices?.length || 0) > 1} />

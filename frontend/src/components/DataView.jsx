@@ -1,3 +1,4 @@
+import { chName } from "@/api";
 import { useState } from "react";
 import { Zap, Droplet } from "lucide-react";
 import { DailyUsage, CsvExport } from "@/components/UsageExport";
@@ -86,7 +87,7 @@ const EventLog = ({ t, events }) => {
   );
 };
 
-export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events }) => {
+export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events, dev }) => {
   const data = (history[String(ch?.id)] || []).map((d) => ({
     ...d, cl_closed: d.curtain_left == null ? null : 100 - d.curtain_left,
     cr_closed: d.curtain_right == null ? null : 100 - d.curtain_right,
@@ -95,7 +96,7 @@ export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="data-view">
       {plant && <PlantTile plant={plant} t={t} />}
       <DailyUsage t={t} deviceId={deviceId} />
-      <div className="font-head" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>{t.history} · {t.chamberWord} {(ch?.id ?? 0) + 1} · 3 {t.hours}</div>
+      <div className="font-head" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>{t.history} · {chName(t, dev, ch?.id ?? 0)} · 3 {t.hours}</div>
       <Chart t={t} title={t.historyTemp} data={data} lines={[["temp", "var(--text)", t.temp]]} testid="chart-temp" />
       <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "var(--c-water)", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
       <Chart t={t} title={t.historyCo2} data={data} lines={[["co2", "var(--c-co2)", t.co2]]} testid="chart-co2" />
@@ -104,7 +105,7 @@ export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events
       <Chart t={t} title={t.historyPlant} data={plantHistory} testid="chart-plant"
         lines={[["power_kw", "var(--c-power)", `${t.power} kW`], ["water_lpm", "var(--c-water)", `${t.water} l/min`]]} />
 
-      {ch && <CsvExport t={t} ch={ch} deviceId={deviceId} />}
+      {ch && <CsvExport t={t} ch={ch} deviceId={deviceId} dev={dev} />}
 
       <EventLog t={t} events={events} />
     </div>

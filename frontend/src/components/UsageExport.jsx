@@ -1,3 +1,4 @@
+import { chName } from "@/api";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { Download } from "lucide-react";
@@ -40,12 +41,12 @@ export const DailyUsage = ({ t, deviceId }) => {
   );
 };
 
-export const CsvExport = ({ t, ch, deviceId }) => {
+export const CsvExport = ({ t, ch, deviceId, dev }) => {
   const [hours, setHours] = useState(24);
   const opts = [[24, "24 h"], [168, `7 ${t.daysShort}`], [720, `30 ${t.daysShort}`]];
   return (
     <div className="panel panel-pad" data-testid="csv-export">
-      <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{t.exportCsv} · {t.chamberWord} {ch.id + 1}</div>
+      <div className="font-head" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>{t.exportCsv} · {chName(t, dev, ch.id)}</div>
       <div className="flex gap-2 mb-3">
         {opts.map(([h, label]) => (
           <button key={h} data-testid={`csv-range-${h}`} onClick={() => setHours(h)} className="font-head"

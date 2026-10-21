@@ -38,3 +38,4 @@ export const formatApiError = (detail, fallback) => {
 
 export const siteLogoUrl = (site, size) => site?.logo_version
   ? `${API}/public/site/logo?${size ? `size=${size}&` : ""}v=${site.logo_version}` : "/icon-192.png";
+export const chName = (t, dev, id) => dev?.chamber_names?.[id] || `${t.chamberWord} ${id + 1}`;

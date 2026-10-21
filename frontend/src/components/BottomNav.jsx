@@ -16,7 +16,7 @@ export const BottomNav = ({ view, setView, t, showOverview }) => {
   );
 };
 
-export const ChamberSwitch = ({ chambers, selected, setSelected, t }) => {
+export const ChamberSwitch = ({ chambers, selected, setSelected, t, dev }) => {
   const many = chambers.length > 3;
   return (
     <div className="panel flex mb-3 chamber-switch" style={{ overflowX: "auto" }} data-testid="chamber-switch">
@@ -31,7 +31,7 @@ export const ChamberSwitch = ({ chambers, selected, setSelected, t }) => {
             transition: "background-color 0.2s ease, color 0.2s ease",
           }}>
           <span className={`led ${ch.alarm ? "warn pulse" : ch.on ? "ok" : ""}`} style={!ch.on && !ch.alarm ? { background: "var(--off)" } : undefined} />
-          {many ? `${t.chamberShort}${ch.id + 1}` : `${t.chamberWord} ${ch.id + 1}`}
+          <span style={{ maxWidth: many ? 90 : 140, overflow: "hidden", textOverflow: "ellipsis" }}>{dev?.chamber_names?.[ch.id] || (many ? `${t.chamberShort}${ch.id + 1}` : `${t.chamberWord} ${ch.id + 1}`)}</span>
         </button>
       ))}
     </div>

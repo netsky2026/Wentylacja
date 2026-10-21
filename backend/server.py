@@ -298,6 +298,11 @@ def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
+def ch_name(device_id: str, cid: int) -> str:
+    d = DEVICES.get(device_id) or {}
+    return d.get("chamber_names", {}).get(str(cid)) or f"Komora {cid + 1}"
+
+
 def sanitize_state(p, device_id: str) -> Optional[dict]:
     """Accept only well-formed numeric state with exactly the device's chambers; drop anything else."""
     n = DEVICES[device_id]["chambers"]
@@ -309,7 +314,7 @@ def sanitize_state(p, device_id: str) -> Optional[dict]:
     chambers = []
     for ch in sorted(p["chambers"], key=lambda c: int(c["id"])):
         cid = int(ch["id"])
-        out = {"id": cid, "name": f"Komora {cid + 1}", "on": bool(ch.get("on")), "heating": bool(ch.get("heating")),
+        out = {"id": cid, "name": ch_name(device_id, cid), "on": bool(ch.get("on")), "heating": bool(ch.get("heating")),
                "mode": "manual" if ch.get("mode") == "manual" else "auto"}
         for k in NUM_FIELDS:
             if not _num(ch.get(k)):
@@ -408,7 +413,7 @@ class Gateway:
         was = {c["id"]: c.get("alarm") for c in (prev or {}).get("chambers", [])}
         for ch in cur["chambers"]:
             if ch["alarm"] and not was.get(ch["id"]):
-                title = f"ALARM: {dev_label(device_id)} – Komora {ch['id'] + 1}"
+                title = f"ALARM: {dev_label(device_id)} – {ch_name(device_id, ch['id'])}"
                 reason = alarm_reason(ch)
                 self.schedule(log_event("warning", f"{title} — {reason}", {"chamber": ch["id"]}, device_id))
                 self.schedule(broadcast({"type": "alarm", "device_id": device_id, "title": title, "body": reason},
@@ -469,7 +474,8 @@ async def load_registry():
     DEVICES.clear()
     async for d in db.devices.find({}):
         DEVICES[d["device_id"]] = {"client_id": d["client_id"], "client_name": clients.get(d["client_id"], "?"),
-                                   "name": d["name"], "chambers": d["chambers"], "simulated": d.get("simulated", False)}
+                                   "name": d["name"], "chambers": d["chambers"], "simulated": d.get("simulated", False),
+                                   "chamber_names": d.get("chamber_names", {})}
     THRESHOLDS.clear()
     async for t in db.device_thresholds.find({}):
         THRESHOLDS[(t["device_id"], t["chamber"])] = {"temp_max": t["temp_max"], "co2_max": t["co2_max"]}
@@ -615,7 +621,7 @@ async def alarm_notifier():
                     continue
                 cid = DEVICES[device_id]["client_id"]
                 for ch in st["chambers"]:
-                    key, name = f"{device_id}:{ch['id']}", f"{dev_label(device_id)} – Komora {ch['id'] + 1}"
+                    key, name = f"{device_id}:{ch['id']}", f"{dev_label(device_id)} – {ch_name(device_id, ch['id'])}"
                     last = alarm_active.get(key)
                     if ch.get("alarm"):
                         if last is None or now - last >= ALARM_REMIND_S:
@@ -686,7 +692,8 @@ def client_scope(user: dict, client_id: Optional[str]) -> str:
 def device_view(device_id: str, user: dict) -> dict:
     d = DEVICES[device_id]
     out = {"device_id": device_id, "name": d["name"], "client_id": d["client_id"], "client_name": d["client_name"],
-           "chambers": d["chambers"], "simulated": d["simulated"], "online": gateway.is_online(device_id),
+           "chambers": d["chambers"], "chamber_names": d["chamber_names"], "simulated": d["simulated"],
+           "online": gateway.is_online(device_id),
            "state": gateway.states.get(device_id)}
     if user["role"] == "superadmin":
         out.update({"state_topic": state_topic(device_id), "command_topic": command_topic(device_id)})
@@ -1117,7 +1124,7 @@ async def device_command(device_id: str, cmd: CommandIn, user: dict = Depends(re
     body = {**cmd.model_dump(), "request_id": uuid.uuid4().hex}
     if not gateway.publish_command(device_id, body):
         raise HTTPException(503, "MQTT publish failed")
-    name = f"{d['name']} – Komora {cmd.chamber + 1}"
+    name = f"{d['name']} – {ch_name(device_id, cmd.chamber)}"
     if cmd.type == "set_setpoint":
         msg = f"{name}: nastawa = {cmd.value}°C"
     elif cmd.type == "set_mode":
@@ -1146,7 +1153,7 @@ async def set_threshold(device_id: str, chamber: int, body: ThresholdIn, user: d
     th = {"temp_max": round(body.temp_max, 1), "co2_max": float(round(body.co2_max))}
     THRESHOLDS[(device_id, chamber)] = th
     await db.device_thresholds.update_one({"device_id": device_id, "chamber": chamber}, {"$set": th}, upsert=True)
-    await log_event("info", f"{d['name']} – Komora {chamber + 1}: progi temp ≤ {th['temp_max']}°C, CO₂ ≤ {int(th['co2_max'])} ppm",
+    await log_event("info", f"{d['name']} – {ch_name(device_id, chamber)}: progi temp ≤ {th['temp_max']}°C, CO₂ ≤ {int(th['co2_max'])} ppm",
                     {"user": user["email"]}, device_id)
     st = gateway.states.get(device_id)
     if st:
@@ -1154,6 +1161,26 @@ async def set_threshold(device_id: str, chamber: int, body: ThresholdIn, user: d
         annotate(device_id, st)
         gateway.detect_alarms(device_id, prev, st)
     return {"ok": True, "thresholds": th}
+
+
+class ChamberNameIn(BaseModel):
+    name: str = Field(default="", max_length=30)
+
+
+@api.put("/devices/{device_id}/chambers/{chamber}/name")
+async def rename_chamber(device_id: str, chamber: int, body: ChamberNameIn, user: dict = Depends(require("admin"))):
+    d = device_or_404(user, device_id)
+    if not 0 <= chamber < d["chambers"]:
+        raise HTTPException(404, "unknown chamber")
+    name, old = " ".join(body.name.split()), ch_name(device_id, chamber)
+    op = {"$set": {f"chamber_names.{chamber}": name}} if name else {"$unset": {f"chamber_names.{chamber}": ""}}
+    await db.devices.update_one({"device_id": device_id}, op)
+    await load_registry()
+    st = gateway.states.get(device_id)
+    if st:
+        st["chambers"][chamber]["name"] = ch_name(device_id, chamber)
+    await log_event("info", f"{d['name']}: zmieniono nazwę „{old}” → „{ch_name(device_id, chamber)}”", {"user": user["email"]}, device_id)
+    return {"ok": True, "name": ch_name(device_id, chamber)}
 
 
 @api.get("/devices/{device_id}/history")
