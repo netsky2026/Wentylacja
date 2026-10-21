@@ -272,3 +272,4 @@ input[type=checkbox] { accent-color: var(--primary); }
   .welcome-rise, .welcome-photo, .welcome-led { animation: none; opacity: 1; }
   .welcome-photo { opacity: 0.55; }
 }
+.header-logout { transition: color 0.2s ease, border-color 0.2s ease; } .header-logout:hover { color: var(--accent) !important; border-color: var(--accent); }

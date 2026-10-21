@@ -111,3 +111,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: auto client slug (unique_slug, migrate_slugs, unique partial index), QR button in client row (client-qr-<id>), install.sh broker ACL now idempotent+verified (fixes offline device after failed first install). Tested iteration_17.
 - 2026-06: deploy/set-email.sh (interactive SMTP setup in .env + restart + test send). OVH mail SMTP: smtp.mail.ovh.net:465 SSL, user = full address.
 - 2026-06: chamber rename (PUT /api/devices/{id}/chambers/{n}/name, admin+; ChamberNameEdit pencil on chamber screen + settings; names in tabs/history/CSV/alarms). Client list always migrates slugs; QR row button unconditional. Caddy no-cache for non-static. Tested iteration_18/19.
+- 2026-06: header logout button (data-testid header-logout) next to PL/EN.

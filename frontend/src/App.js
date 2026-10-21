@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
+import { LogOut } from "lucide-react";
 import { I18N } from "@/i18n";
 import { API, refreshSession, setOnAuthLost, siteLogoUrl } from "@/api";
 import { LoginScreen } from "@/components/LoginScreen";
@@ -222,7 +223,8 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
             <span className="font-head" data-testid="app-title" style={{ fontSize: 20, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {brand.app_name || t.appName}</span>
           </div>
-          <div className="panel flex" style={{ overflow: "hidden", flexShrink: 0 }}>
+          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          <div className="panel flex" style={{ overflow: "hidden" }}>
             {["pl", "en"].map((l) => (
               <button key={l} data-testid={`lang-${l}`} onClick={() => setLang(l)} className="font-head"
                 style={{
@@ -230,6 +232,12 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
                   border: "none", padding: "7px 11px", cursor: "pointer", fontSize: 13, fontWeight: 700,
                 }}>{l.toUpperCase()}</button>
             ))}
+          </div>
+          <button className="panel flex items-center gap-1 font-head header-logout" onClick={onLogout} data-testid="header-logout"
+            aria-label={t.logout} title={t.logout}
+            style={{ padding: "7px 10px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--muted)" }}>
+            <LogOut size={15} /><span className="hidden sm:inline">{t.logout}</span>
+          </button>
           </div>
         </header>
 
