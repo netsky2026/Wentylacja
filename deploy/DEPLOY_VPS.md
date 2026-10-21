@@ -40,7 +40,7 @@ W czacie Emergent kliknij **„Save to GitHub”**, a potem na serwerze:
 ```bash
 git clone https://github.com/TWOJ_LOGIN/TWOJE_REPO.git /opt/wentylacja
 cd /opt/wentylacja/deploy
-cp .env.example .env
+cp env.example .env
 ```
 
 ## 4. Ustawienia (`.env`)
