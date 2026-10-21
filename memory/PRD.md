@@ -106,3 +106,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: WelcomeScreen landing (/ for guests without brand_slug; ?klient= skips to login), login back button, GET /api/public/site + PUT /api/site (superadmin contact phone/email, SiteCard in Settings), hero /public/welcome.jpg
 - 2026-06: Platform (site) logo upload (POST/DELETE /api/site/logo, GET /api/public/site/logo, /api/public/manifest; client manifest falls back to site logo), QR poster dialog per client (qrcode lib, QrDialog.jsx), welcome forces green theme. Tested iteration_15 (100%). User VPS IP 51.222.200.183 (OVH Beauharnois, Canada).
 - 2026-06: QR poster now includes 4-step install instructions (PL/EN) for printing. User staying with Canada VPS.
+- LEARNING: platform git does NOT commit frontend/yarn.lock -> copy kept at deploy/frontend.yarn.lock (re-copy after any yarn add!). Backend prod deps: deploy/requirements.prod.txt

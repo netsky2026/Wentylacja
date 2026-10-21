@@ -1,6 +1,7 @@
 FROM node:20-alpine AS build
 WORKDIR /src
-COPY frontend/package.json frontend/yarn.lock ./
+COPY frontend/package.json ./
+COPY deploy/frontend.yarn.lock ./yarn.lock
 RUN yarn install --frozen-lockfile --network-timeout 600000
 COPY frontend/ .
 RUN rm -f .env

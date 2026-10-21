@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 WORKDIR /app
-COPY backend/requirements.txt .
-RUN grep -v "^emergentintegrations" requirements.txt > req.txt && pip install --no-cache-dir -r req.txt
+COPY deploy/requirements.prod.txt .
+RUN pip install --no-cache-dir -r requirements.prod.txt
 COPY backend/ .
 RUN rm -f .env
 EXPOSE 8001
