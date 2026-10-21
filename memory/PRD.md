@@ -108,3 +108,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: QR poster now includes 4-step install instructions (PL/EN) for printing. User staying with Canada VPS.
 - LEARNING: platform git does NOT commit frontend/yarn.lock -> copy kept at deploy/frontend-yarn-lock.txt (re-copy after any yarn add!). Backend prod deps: deploy/requirements.prod.txt
 - 2026-06: PRODUCTION LIVE on user's OVH VPS (Canada) https://marcopolo-wentylacja.pl (IP 51.222.200.183), repo github.com/netsky2026/wentylacja, installed at /opt/wentylacja via deploy/install.sh. HTTPS + MQTT TLS 8883 verified (Let's Encrypt). Updates: Save to GitHub -> on VPS: cd /opt/wentylacja && sudo git pull && sudo bash deploy/update.sh
+- 2026-06: auto client slug (unique_slug, migrate_slugs, unique partial index), QR button in client row (client-qr-<id>), install.sh broker ACL now idempotent+verified (fixes offline device after failed first install). Tested iteration_17.

@@ -122,7 +122,7 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
     try {
       const { data } = await axios.post(`${API}/devices`, { ...f, chambers: Number(f.chambers) });
       setCreds(await (await axios.get(`${API}/devices/${data.device_id}/credentials`)).data);
-      setF({ ...f, name: "", device_id: "" });
+      setF({ ...f, name: "", device_id: "", simulated: false });
       refresh();
     } catch (e) { err(e); }
   };

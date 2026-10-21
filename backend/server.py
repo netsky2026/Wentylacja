@@ -639,6 +639,7 @@ async def lifespan(app: FastAPI):
     await auth.setup()
     await migrate_legacy()
     await migrate_slugs()
+    await db.clients.create_index("slug", unique=True, partialFilterExpression={"slug": {"$type": "string"}})
     await load_broker()
     await load_registry()
     await db.plc_history.create_index([("device_id", 1), ("ts", 1)])
@@ -842,6 +843,8 @@ async def client_or_404(client_id: str) -> dict:
 async def patch_client(client_id: str, body: ClientPatch, user: dict = Depends(require("superadmin"))):
     c = await client_or_404(client_id)
     upd = {k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump().items() if v is not None}
+    if upd.get("slug") == "" and c.get("slug"):
+        upd.pop("slug")
     if upd.get("slug") and await db.clients.find_one({"slug": upd["slug"], "_id": {"$ne": c["_id"]}}):
         raise HTTPException(409, "Link name already used")
     if upd:

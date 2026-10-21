@@ -1,0 +1,19 @@
+{
+  "summary": "Tested auto-generated client slugs (backend) and the new per-row QR button in FleetCard (frontend, mobile 390x844, superadmin). Backend: 10/10 pytest passed. 'Ferma Żółć Nowak' gets 'ferma-zolc-nowak', then -2 and -3 for duplicates. '!!' and 'ą' fall back to 'ferma'. Long names get a valid slug of 40 chars or less. Public branding and manifest work for the new client. Every client in the list has a slug; Marco Polo was migrated to 'marco-polo'; Kowalski is still 'kowalski'. Unauthenticated POST is rejected. Frontend: every client row shows client-qr-<id>. Clicking it opens qr-dialog without opening the palette editor. qr-image is a 600x1120 PNG data URL. qr-download has download='qr-<slug>.png' and href equal to the image. In the browser, jsQR read each code as <origin>/?klient=<slug> for Kowalski, Marco Polo and a new 'TEST Ferma Żółć Nowak' client. The dialog closes with Escape and with the X button and reopens for another client. The palette editor shows the auto slug in brand-slug and brand-link, and brand-qr decodes correctly. Add-device regression passed: created a simulated device, credentials were shown, then device and client were deleted. All test data was cleaned up.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "POST /api/clients", "issue": "There is no unique index on clients.slug, so two concurrent creates with the same name could get the same slug (the check-then-insert can race). Low risk because only the superadmin creates clients."},
+    {"endpoint": "PATCH /api/clients/{id}", "issue": "slug='' is accepted (the pattern allows empty) and removes the client's slug. The row's QR button then disappears until a backend restart runs migrate_slugs. Consider rejecting an empty slug or regenerating it."}
+  ]},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [
+    {"screen": "Add device form", "issues": ["Minor: the 'Symulator' checkbox stays checked after a device is added (setF keeps simulated). This may be intended."]}
+  ]},
+  "test_report_links": ["/app/backend/tests/test_iteration17_auto_slug.py", "/app/test_reports/pytest/pytest_it17.xml"],
+  "action_items": ["Optional: add a unique (sparse) index on clients.slug", "Optional: reject or regenerate an empty slug in PATCH /api/clients"],
+  "critical_code_review_comments": ["unique_slug: transliteration and the 34-char cut leave room for a -N suffix within the 40-char limit, and the result matches the client_by_slug regex. OK.", "FleetCard mounts QrDialog only while qrClient is set, so no stale poster appears between clients. Good.", "The Polish map (PL_MAP) does not cover other diacritics (e.g. German ü, Czech č). These are dropped and become '-'. Acceptable."],
+  "updated_files": ["/app/backend/tests/test_iteration17_auto_slug.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None kept. Temporary TEST clients and device test-regr-17 were created and deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Clients now: Ferma Kowalski (slug kowalski, id 6ad7dcc3261e5ba3c23315b7) and Marco Polo (slug marco-polo after migration, id 6ad7dcb08b38a7c48f3db7d2). To decode QR in the browser, inject https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js with page.add_script_tag and draw qr-image onto a canvas. Login flow: welcome-login-button -> login-email/login-password/login-submit -> nav-settings -> fleet-card."
+}
