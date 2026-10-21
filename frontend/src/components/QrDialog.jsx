@@ -3,10 +3,40 @@ import QRCode from "qrcode";
 import { Download } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
-const W = 600, H = 820;
+const W = 600, H = 1120;
 const loadImg = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
 
-const drawPoster = async (canvas, { link, name, logoSrc }) => {
+const wrap = (ctx, text, x, y, max, lh) => {
+  let line = "";
+  for (const w of text.split(" ")) {
+    if (ctx.measureText(line + w).width > max && line) { ctx.fillText(line.trim(), x, y); y += lh; line = ""; }
+    line += w + " ";
+  }
+  ctx.fillText(line.trim(), x, y);
+  return y + lh;
+};
+
+const drawSteps = (ctx, title, steps) => {
+  ctx.fillStyle = "#F0F3F0";
+  ctx.fillRect(30, 760, W - 60, 330);
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#1E8A50";
+  ctx.font = "700 26px 'Barlow Condensed', sans-serif";
+  ctx.fillText(title.toUpperCase(), 54, 800);
+  let y = 842;
+  steps.forEach((st, i) => {
+    ctx.fillStyle = "#1E8A50";
+    ctx.beginPath(); ctx.arc(68, y - 7, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#FFFFFF"; ctx.textAlign = "center";
+    ctx.font = "700 17px 'JetBrains Mono', monospace";
+    ctx.fillText(String(i + 1), 68, y - 1);
+    ctx.fillStyle = "#101612"; ctx.textAlign = "left";
+    ctx.font = "500 17px 'JetBrains Mono', monospace";
+    y = wrap(ctx, st, 94, y, W - 140, 24) + 14;
+  });
+};
+
+const drawPoster = async (canvas, { link, name, logoSrc, t }) => {
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, W, H);
@@ -25,6 +55,7 @@ const drawPoster = async (canvas, { link, name, logoSrc }) => {
   ctx.fillStyle = "#59635C";
   ctx.font = "500 18px 'JetBrains Mono', monospace";
   ctx.fillText(link.replace(/^https?:\/\//, ""), W / 2, 722, W - 60);
+  drawSteps(ctx, t.qrStepsTitle, t.qrSteps);
 };
 
 export const QrDialog = ({ open, onOpenChange, t, link, name, logoSrc, slug }) => {
@@ -35,8 +66,8 @@ export const QrDialog = ({ open, onOpenChange, t, link, name, logoSrc, slug }) =
     const c = document.createElement("canvas");
     c.width = W; c.height = H;
     ref.current = c;
-    drawPoster(c, { link, name, logoSrc }).then(() => setUrl(c.toDataURL("image/png")));
-  }, [open, link, name, logoSrc]);
+    drawPoster(c, { link, name, logoSrc, t }).then(() => setUrl(c.toDataURL("image/png")));
+  }, [open, link, name, logoSrc, t]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="qr-dialog" style={{ background: "var(--card)", borderColor: "var(--border)", color: "var(--text)", maxWidth: 400 }}>
