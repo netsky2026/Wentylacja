@@ -804,6 +804,7 @@ async def set_broker(body: BrokerIn, user: dict = Depends(require("superadmin"))
 
 @api.get("/clients")
 async def list_clients(user: dict = Depends(require("superadmin"))):
+    await migrate_slugs()
     out = []
     async for c in db.clients.find({}).sort("name", 1):
         cid = str(c["_id"])
@@ -1173,6 +1174,8 @@ async def rename_chamber(device_id: str, chamber: int, body: ChamberNameIn, user
     if not 0 <= chamber < d["chambers"]:
         raise HTTPException(404, "unknown chamber")
     name, old = " ".join(body.name.split()), ch_name(device_id, chamber)
+    if (name or f"Komora {chamber + 1}") == old:
+        return {"ok": True, "name": old}
     op = {"$set": {f"chamber_names.{chamber}": name}} if name else {"$unset": {f"chamber_names.{chamber}": ""}}
     await db.devices.update_one({"device_id": device_id}, op)
     await load_registry()

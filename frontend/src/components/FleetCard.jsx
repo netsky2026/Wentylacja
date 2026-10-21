@@ -145,7 +145,7 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
           <div className="flex items-center justify-between">
             <span className="font-head" style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
             <div className="flex gap-1">
-              {c.slug && <button className="sp-btn" onClick={() => setQrClient(c)} data-testid={`client-qr-${c.id}`} aria-label="QR"
+              {<button className="sp-btn" onClick={() => setQrClient(c)} data-testid={`client-qr-${c.id}`} aria-label="QR"
                 style={{ width: "auto", padding: "0 8px", gap: 4, fontSize: 11, fontWeight: 700, color: "var(--primary)" }}><QrCode size={13} /> QR</button>}
               <button className="sp-btn" onClick={() => setBrandOpen(brandOpen === c.id ? null : c.id)} data-testid={`client-brand-${c.id}`}
                 aria-label={t.branding} style={{ color: brandOpen === c.id ? "var(--primary)" : undefined }}><Palette size={13} /></button>

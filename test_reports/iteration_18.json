@@ -1,0 +1,36 @@
+{
+  "summary": "Chamber rename feature tested (backend pytest 7/7 + mobile 390x844 UI as client admin, operator, superadmin). Backend rename/reset/whitespace collapse/404/422/401/403 RBAC and cross-client isolation all correct; event log entry present. UI: pencil, input, Enter/save/Escape, toast, header/tabs/Settings/Data history title update, empty → 'Komora N', operator has no pencil, 30-char name truncates with ellipsis, no horizontal overflow. ONE real bug: while the rename input is open, the 5s device poll resets the typed value (typed text lost).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/devices/{id}/chambers/{n}/name", "issue": "No-op rename (same/default name) still writes an event log entry, e.g. 'zmieniono nazwę „Komora 6” → „Komora 6”'. Skip log_event (and DB write/load_registry) when old == new."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ChamberNameEdit.jsx", "issue": "useEffect(() => setVal(...), [dev, id, edit]) runs every 5s because App.loadDevices creates a new dev object each poll. Typed text in chamber-<id>-name-input is wiped back to the stored name (reproduced: typed 'Poro', waited 6.5s, input value became ''). Users who type slowly lose input / save wrong value. Fix: only init val when edit turns true, e.g. deps [edit, id] or set val in the pencil onClick.", "selector": "[data-testid=chamber-<id>-name-input]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Chamber header (long name)", "issues": ["Pencil button shrinks to ~22px width with 30-char name (flex-shrink); add flexShrink:0 to the pencil button."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration18_chamber_rename.py", "/app/test_reports/pytest/pytest_iteration18.xml"],
+  "action_items": [
+    "Fix ChamberNameEdit useEffect so the 5s device poll doesn't reset the input while editing (deps [edit, id] only, or init on pencil click)",
+    "Skip event log / DB write when the chamber name is unchanged",
+    "Add flexShrink:0 to the rename pencil button"
+  ],
+  "critical_code_review_comments": [
+    "ChamberNameEdit: useEffect depends on the dev object reference, which changes every poll (that's the HIGH bug).",
+    "rename_chamber calls load_registry() (reloads all clients/devices/thresholds) for one field change; updating DEVICES[device_id]['chamber_names'] in memory would be cheaper.",
+    "Pydantic max_length=30 is checked before whitespace collapse, so 31+ chars with padding spaces are rejected even if trimmed length <=30 (fine since frontend trims; just noting)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration18_chamber_rename.py"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "~92% (1 HIGH bug: input reset by poll)"},
+  "seed_data_creation": "Temporary users ui_admin_it18/ui_operator_it18@example.com + pytest test_* users were created and deleted. All chamber_names reset to {} on kowalski-a and chlodnia-01.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login: click welcome-login-button on / first, then login-email/password/submit. Superadmin switches device via select[data-testid=device-select] (label 'Ferma Kowalski · Tuczarnia A'). To retest the bug: open chamber-0-rename, type text, wait 6s, check chamber-0-name-input value is preserved. Clean up with PUT name '' for all chambers.",
+  "rca of the issue": "App.js polls /api/devices every 5s → setDevices(new array) → dev prop is new object → ChamberNameEdit useEffect [dev,id,edit] fires → setVal(dev.chamber_names[id] || '') overwrites user's in-progress text. Repro: open rename, type, wait >5s. Mitigation: depend on [edit, id] only."
+}
