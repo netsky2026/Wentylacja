@@ -114,3 +114,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: header logout button (data-testid header-logout) next to PL/EN.
 - 2026-06: 4 new themes red/teal/graphite/lightblue (CSS vars, THEMES, THEME_RX in server+auth, THEME_BG). Red theme: primary #EF5B66, alarm accent #FFB020. Tested iteration_20.
 - 2026-06: theme 'forest' = Świeża trawa (dark bg #050F07 per user, deep green cards #0E3D18, lime primary #E2FF7A).
+- 2026-06: theme 'sun' = Słoneczny żółty (dark bg, golden cards #3A2F06, yellow primary #FFD60A).

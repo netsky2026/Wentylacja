@@ -165,7 +165,7 @@ THEMES = ("green", "light", "blue", "amber")
 
 
 class PrefsIn(BaseModel):
-    theme: Optional[str] = Field(default=None, pattern=r"^(green|light|blue|amber|red|teal|graphite|lightblue|forest)$")
+    theme: Optional[str] = Field(default=None, pattern=r"^(green|light|blue|amber|red|teal|graphite|lightblue|forest|sun)$")
 
 
 @router.put("/auth/preferences")

@@ -6,7 +6,7 @@ import { API, formatApiError } from "@/api";
 
 const ROLE_KEYS = { viewer: "roleViewer", operator: "roleOperator", admin: "roleAdmin", superadmin: "roleSuperadmin" };
 
-export const THEMES = ["green", "light", "blue", "amber", "red", "teal", "graphite", "lightblue", "forest"];
+export const THEMES = ["green", "light", "blue", "amber", "red", "teal", "graphite", "lightblue", "forest", "sun"];
 
 export const ThemeSelect = ({ t, value, onChange, withDefault, testid, defaultLabel }) => (
   <select className="num-input" style={{ fontSize: 13 }} value={value || ""} onChange={(e) => onChange(e.target.value || null)} data-testid={testid}>

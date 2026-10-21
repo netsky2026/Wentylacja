@@ -75,7 +75,7 @@ def get_object(path: str) -> bytes:
     return f.read_bytes()
 
 
-THEME_RX = r"^(green|light|blue|amber|red|teal|graphite|lightblue|forest)$"
+THEME_RX = r"^(green|light|blue|amber|red|teal|graphite|lightblue|forest|sun)$"
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -917,7 +917,7 @@ def _square_icon(png: bytes, size: int, bg: str) -> bytes:
 
 
 THEME_BG = {"green": "#0A0A0A", "light": "#F3F5F3", "blue": "#080B12", "amber": "#0C0A07", "red": "#0E0909", "teal": "#061010",
-            "graphite": "#111214", "lightblue": "#F2F5F9", "forest": "#050F07"}
+            "graphite": "#111214", "lightblue": "#F2F5F9", "forest": "#050F07", "sun": "#0F0C02"}
 
 
 async def client_by_slug(slug: str) -> dict:
