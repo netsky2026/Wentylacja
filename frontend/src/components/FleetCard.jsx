@@ -7,6 +7,13 @@ import { ThemeSelect } from "@/components/AccountCards";
 
 const BrandEditor = ({ c, t, onChanged }) => {
   const [name, setName] = useState(c.display_name || "");
+  const [slug, setSlug] = useState(c.slug || "");
+  const link = c.slug ? `${window.location.origin}/?klient=${c.slug}` : "";
+  const saveSlug = async () => {
+    if (slug && !/^[a-z0-9][a-z0-9-]{1,39}$/.test(slug)) { toast.error(t.slugInvalid); return; }
+    try { await axios.patch(`${API}/clients/${c.id}`, { slug }); onChanged(); toast.success(t.saved); }
+    catch (e) { toast.error(e.response?.status === 409 ? t.slugTaken : t.saveFailed); }
+  };
   const patch = async (body) => {
     try { await axios.patch(`${API}/clients/${c.id}`, body); onChanged(); toast.success(t.saved); } catch (e) { toast.error(t.saveFailed); }
   };
@@ -29,6 +36,20 @@ const BrandEditor = ({ c, t, onChanged }) => {
           <button className="action-btn" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => patch({ display_name: name })} data-testid={`brand-name-save-${c.id}`}>{t.save}</button>
         </div>
       </label>
+      <label className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)" }}>{t.clientLink}
+        <div className="grid gap-2" style={{ gridTemplateColumns: "1fr auto" }}>
+          <input className="num-input" style={{ fontSize: 13 }} value={slug} maxLength={40} placeholder="np. kowalski"
+            onChange={(e) => setSlug(e.target.value.toLowerCase())} data-testid={`brand-slug-${c.id}`} />
+          <button className="action-btn" style={{ padding: "6px 12px", fontSize: 12 }} onClick={saveSlug} data-testid={`brand-slug-save-${c.id}`}>{t.save}</button>
+        </div>
+      </label>
+      {link && (
+        <div className="flex items-center justify-between reg-cell" style={{ padding: "6px 10px", fontSize: 11 }}>
+          <span data-testid={`brand-link-${c.id}`} style={{ wordBreak: "break-all" }}>{link}</span>
+          <button className="sp-btn" onClick={() => { navigator.clipboard?.writeText(link); toast.success(t.copied); }}
+            data-testid={`brand-link-copy-${c.id}`} aria-label={t.copy}><Copy size={13} /></button>
+        </div>
+      )}
       <label className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)" }}>{t.colorTheme}
         <ThemeSelect t={t} value={c.theme} onChange={(theme) => patch({ theme })} testid={`brand-theme-${c.id}`} />
       </label>

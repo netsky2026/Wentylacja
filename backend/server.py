@@ -47,8 +47,8 @@ FRONTEND_URL = os.environ["FRONTEND_URL"].rstrip("/")
 MQTT_HOST = os.environ['MQTT_HOST']
 MQTT_PORT = int(os.environ['MQTT_PORT'])
 MQTT_PREFIX = os.environ['MQTT_PREFIX'].strip('/')
-MQTT_USER = ""
-MQTT_PASS = ""
+MQTT_USER = os.environ.get("MQTT_USER", "")
+MQTT_PASS = os.environ.get("MQTT_PASS", "")
 MQTT_TLS = False
 SAMPLE_S = 15
 ALARM_REMIND_S = 30 * 60
@@ -72,7 +72,15 @@ def init_storage(force: bool = False) -> str:
     return _storage_key
 
 
+LOGO_DIR = os.environ.get("LOGO_DIR")  # set on self-hosted VPS -> logos on local disk instead of object storage
+
+
 def put_object(path: str, data: bytes, content_type: str) -> dict:
+    if LOGO_DIR:
+        f = Path(LOGO_DIR) / path
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(data)
+        return {"path": path}
     for attempt in (0, 1):
         r = requests.put(f"{STORAGE_URL}/objects/{path}", data=data, timeout=120,
                          headers={"X-Storage-Key": init_storage(force=attempt == 1), "Content-Type": content_type})
@@ -82,6 +90,8 @@ def put_object(path: str, data: bytes, content_type: str) -> dict:
 
 
 def get_object(path: str) -> tuple:
+    if LOGO_DIR:
+        return (Path(LOGO_DIR) / path).read_bytes(), "image/png"
     for attempt in (0, 1):
         r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": init_storage(force=attempt == 1)}, timeout=60)
         if r.status_code != 404 or attempt:
@@ -526,6 +536,31 @@ async def load_broker():
         set_broker_globals(doc)
 
 
+MQTT_DYNSEC = os.environ.get("MQTT_DYNSEC") == "1"  # self-hosted Mosquitto with dynamic-security plugin
+
+
+def dynsec(commands: list):
+    """Provision per-device broker accounts (Mosquitto dynamic security). No-op on external brokers."""
+    if MQTT_DYNSEC and gateway.mc:
+        gateway.mc.publish("$CONTROL/dynamic-security/v1", json.dumps({"commands": commands}), qos=1)
+
+
+def dynsec_add_device(device_id: str, password: str):
+    role = f"dev-{device_id}"
+    dynsec([
+        {"command": "createRole", "rolename": role, "acls": [
+            {"acltype": "publishClientSend", "topic": state_topic(device_id), "allow": True},
+            {"acltype": "subscribePattern", "topic": command_topic(device_id), "allow": True},
+            {"acltype": "publishClientReceive", "topic": command_topic(device_id), "allow": True}]},
+        {"command": "deleteClient", "username": device_id},
+        {"command": "createClient", "username": device_id, "password": password, "roles": [{"rolename": role}]},
+    ])
+
+
+def dynsec_remove_device(device_id: str):
+    dynsec([{"command": "deleteClient", "username": device_id}, {"command": "deleteRole", "rolename": f"dev-{device_id}"}])
+
+
 def is_public_host(host: str, port: int) -> bool:
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
@@ -623,7 +658,8 @@ async def lifespan(app: FastAPI):
     auth.init(db)
     await auth.setup()
     try:
-        await asyncio.to_thread(init_storage)
+        if not LOGO_DIR:
+            await asyncio.to_thread(init_storage)
     except Exception as e:
         logger.error("Storage init failed: %s", e)
     await migrate_legacy()
@@ -710,6 +746,7 @@ class ClientIn(BaseModel):
 class ClientPatch(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     display_name: Optional[str] = Field(default=None, max_length=40)
+    slug: Optional[str] = Field(default=None, max_length=40, pattern=r"^([a-z0-9][a-z0-9-]{1,39})?$")
     theme: Optional[str] = Field(default=None, pattern=THEME_RX)
 
 
@@ -764,7 +801,7 @@ async def get_config(user: dict = Depends(require("viewer"))):
 @api.put("/broker")
 async def set_broker(body: BrokerIn, user: dict = Depends(require("superadmin"))):
     cfg = body.model_dump()
-    if not await asyncio.to_thread(is_public_host, cfg["host"], cfg["port"]):
+    if not MQTT_DYNSEC and not await asyncio.to_thread(is_public_host, cfg["host"], cfg["port"]):
         raise HTTPException(422, "Broker host must resolve to a public address")
     if cfg["password"] is None:
         cfg["password"] = MQTT_PASS
@@ -787,7 +824,7 @@ async def list_clients(user: dict = Depends(require("superadmin"))):
     async for c in db.clients.find({}).sort("name", 1):
         cid = str(c["_id"])
         out.append({"id": cid, "name": c["name"], "devices": sum(1 for d in DEVICES.values() if d["client_id"] == cid),
-                    "display_name": c.get("display_name", ""), "theme": c.get("theme", "green"),
+                    "display_name": c.get("display_name", ""), "theme": c.get("theme", "green"), "slug": c.get("slug", ""),
                     "logo_version": c.get("logo_version") if c.get("logo_path") else None})
     return {"clients": out}
 
@@ -810,6 +847,8 @@ async def client_or_404(client_id: str) -> dict:
 async def patch_client(client_id: str, body: ClientPatch, user: dict = Depends(require("superadmin"))):
     c = await client_or_404(client_id)
     upd = {k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump().items() if v is not None}
+    if upd.get("slug") and await db.clients.find_one({"slug": upd["slug"], "_id": {"$ne": c["_id"]}}):
+        raise HTTPException(409, "Link name already used")
     if upd:
         await db.clients.update_one({"_id": c["_id"]}, {"$set": upd})
         await load_registry()
@@ -856,6 +895,60 @@ async def get_logo(client_id: str, user: dict = Depends(require("viewer"))):
     return Response(content=data, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
 
+def _square_icon(png: bytes, size: int, bg: str) -> bytes:
+    src = Image.open(io.BytesIO(png)).convert("RGBA")
+    canvas = Image.new("RGBA", (size, size), bg)
+    inner = int(size * 0.8)
+    src = src.resize((int(src.width * inner / max(src.size)), int(src.height * inner / max(src.size))), Image.LANCZOS)
+    canvas.paste(src, ((size - src.width) // 2, (size - src.height) // 2), src)
+    out = io.BytesIO()
+    canvas.convert("RGB").save(out, "PNG")
+    return out.getvalue()
+
+
+THEME_BG = {"green": "#0A0A0A", "light": "#F3F5F3", "blue": "#080B12", "amber": "#0C0A07"}
+
+
+async def client_by_slug(slug: str) -> dict:
+    c = await db.clients.find_one({"slug": slug}) if re.match(r"^[a-z0-9][a-z0-9-]{1,39}$", slug or "") else None
+    if not c:
+        raise HTTPException(404, "Unknown client link")
+    return c
+
+
+@api.get("/public/branding/{slug}")
+async def public_branding(slug: str):
+    c = await client_by_slug(slug)
+    return {"slug": slug, "app_name": c.get("display_name") or None, "theme": c.get("theme", "green"),
+            "logo_version": c.get("logo_version") if c.get("logo_path") else None}
+
+
+@api.get("/public/logo/{slug}")
+async def public_logo(slug: str, size: int = 0):
+    c = await client_by_slug(slug)
+    if not c.get("logo_path"):
+        raise HTTPException(404, "No logo")
+    data, _ = await asyncio.to_thread(get_object, c["logo_path"])
+    if size in (180, 192, 512):
+        data = await asyncio.to_thread(_square_icon, data, size, THEME_BG.get(c.get("theme", "green"), "#0A0A0A"))
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@api.get("/public/manifest/{slug}")
+async def public_manifest(slug: str):
+    c = await client_by_slug(slug)
+    name = c.get("display_name") or "Marco Polo Wentylacja"
+    v = c.get("logo_version")
+    icons = ([{"src": f"/api/public/logo/{slug}?size={s}&v={v}", "sizes": f"{s}x{s}", "type": "image/png", "purpose": "any"}
+              for s in (192, 512)] if c.get("logo_path") else
+             [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"}, {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"}])
+    bg = THEME_BG.get(c.get("theme", "green"), "#0A0A0A")
+    return JSONResponse({"id": f"/?klient={slug}", "name": name, "short_name": name, "lang": "pl",
+                         "start_url": f"/?klient={slug}", "scope": "/", "display": "standalone", "orientation": "portrait",
+                         "background_color": bg, "theme_color": bg, "icons": icons},
+                        media_type="application/manifest+json")
+
+
 @api.get("/branding")
 async def branding(client_id: Optional[str] = None, user: dict = Depends(require("viewer"))):
     cid = client_id if user["role"] == "superadmin" else user.get("client_id")
@@ -897,6 +990,7 @@ async def create_device(body: DeviceIn, user: dict = Depends(require("superadmin
                                  "mqtt_password_enc": encrypt_secret(password), "created_at": now_iso()})
     await load_registry()
     sims.sync()
+    dynsec_add_device(body.device_id, password)
     await log_event("info", f"Dodano sterownik: {dev_label(body.device_id)} ({body.chambers} kom.)",
                     {"user": user["email"]}, body.device_id)
     return {**device_view(body.device_id, user), "mqtt_username": body.device_id, "mqtt_password": password}
@@ -933,6 +1027,7 @@ async def delete_device(device_id: str, user: dict = Depends(require("superadmin
     gateway.last_seen.pop(device_id, None)
     sims.sync()
     await db.devices.delete_one({"device_id": device_id})
+    dynsec_remove_device(device_id)
     for coll in ("device_thresholds", "plc_history", "plc_plant_history", "plc_events"):
         await db[coll].delete_many({"device_id": device_id})
     for k in [k for k in alarm_active if k.startswith(f"{device_id}:")]:

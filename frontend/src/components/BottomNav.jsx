@@ -1,7 +1,8 @@
-import { LayoutGrid, LineChart, Settings } from "lucide-react";
+import { LayoutGrid, LineChart, Settings, Building2 } from "lucide-react";
 
-export const BottomNav = ({ view, setView, t }) => {
-  const items = [["chambers", t.chambers, LayoutGrid], ["data", t.details, LineChart], ["settings", t.settingsTab, Settings]];
+export const BottomNav = ({ view, setView, t, showOverview }) => {
+  const items = [...(showOverview ? [["overview", t.overview, Building2]] : []),
+    ["chambers", t.chambers, LayoutGrid], ["data", t.details, LineChart], ["settings", t.settingsTab, Settings]];
   return (
     <nav className="bottom-nav" data-testid="bottom-nav">
       {items.map(([k, label, Icon]) => (

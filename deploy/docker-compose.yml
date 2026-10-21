@@ -1,0 +1,66 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    command: >
+      sh -c "sed \"s/__DOMAIN__/$$DOMAIN/g\" /mosquitto/config/mosquitto.conf.tpl > /mosquitto/config/mosquitto.conf
+      && exec mosquitto -c /mosquitto/config/mosquitto.conf"
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf.tpl:/mosquitto/config/mosquitto.conf.tpl:ro
+      - mosquitto_data:/mosquitto/data
+      - caddy_data:/caddy:ro
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_DYNSEC: "1"
+      LOGO_DIR: /data/logos
+      FRONTEND_URL: https://${DOMAIN}
+    volumes:
+      - logos:/data/logos
+    depends_on:
+      - mongo
+      - mosquitto
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        REACT_APP_BACKEND_URL: https://${DOMAIN}
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:
+  mosquitto_data:
+  logos:
+  caddy_data:
+  caddy_config:

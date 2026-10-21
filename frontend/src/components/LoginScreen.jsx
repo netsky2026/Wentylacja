@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { LogIn } from "lucide-react";
 import { API, formatApiError } from "@/api";
 
-export const LoginScreen = ({ t, onLogin, lang, setLang }) => {
+export const LoginScreen = ({ t, onLogin, lang, setLang, brand }) => {
+  useEffect(() => {
+    if (brand?.theme && !localStorage.getItem("theme_user")) document.documentElement.dataset.theme = brand.theme;
+  }, [brand]);
+  const logo = brand?.logo_version ? `${API}/public/logo/${brand.slug}?v=${brand.logo_version}` : "/icon-192.png";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,7 +29,7 @@ export const LoginScreen = ({ t, onLogin, lang, setLang }) => {
     <div className="app-shell">
       <div className="mobile-wrap fade-in" style={{ maxWidth: 420, paddingTop: "calc(12vh + env(safe-area-inset-top))" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 28 }}>
-          <img src="/icon-192.png" alt="" style={{ width: 56, height: 56, borderRadius: 14 }} />
+          <img src={logo} alt="" data-testid="login-logo" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "contain" }} />
           <div className="panel flex" style={{ overflow: "hidden" }}>
             {["pl", "en"].map((l) => (
               <button key={l} data-testid={`login-lang-${l}`} onClick={() => setLang(l)} className="font-head"
@@ -34,7 +38,7 @@ export const LoginScreen = ({ t, onLogin, lang, setLang }) => {
             ))}
           </div>
         </div>
-        <h1 className="font-head" style={{ fontSize: 34, fontWeight: 700, lineHeight: 1.05, margin: "0 0 6px" }}>{t.appName}</h1>
+        <h1 className="font-head" style={{ fontSize: 34, fontWeight: 700, lineHeight: 1.05, margin: "0 0 6px" }} data-testid="login-title">{brand?.app_name || t.appName}</h1>
         <p style={{ color: "var(--muted)", fontSize: 13, margin: "0 0 28px" }}>{t.loginSubtitle}</p>
         <form onSubmit={submit} className="panel panel-pad" data-testid="login-form" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <label className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)" }}>{t.email}

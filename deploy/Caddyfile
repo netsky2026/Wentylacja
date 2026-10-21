@@ -1,0 +1,14 @@
+{$DOMAIN} {
+	encode gzip
+	handle /api/* {
+		reverse_proxy backend:8001
+	}
+	handle {
+		root * /srv
+		@static path /static/*
+		header @static Cache-Control "public, max-age=31536000, immutable"
+		header /sw.js Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

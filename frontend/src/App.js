@@ -4,6 +4,7 @@ import { Toaster, toast } from "sonner";
 import { I18N } from "@/i18n";
 import { API, refreshSession, setOnAuthLost } from "@/api";
 import { LoginScreen } from "@/components/LoginScreen";
+import { OverviewView } from "@/components/OverviewView";
 import { ChamberScreen } from "@/components/ChamberScreen";
 import { DataView } from "@/components/DataView";
 import { SettingsView } from "@/components/SettingsView";
@@ -11,10 +12,33 @@ import { BottomNav, ChamberSwitch, DevicePicker } from "@/components/BottomNav";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 document.documentElement.dataset.theme = localStorage.getItem("theme") || "green";
+const urlSlug = new URLSearchParams(window.location.search).get("klient");
+if (urlSlug && /^[a-z0-9][a-z0-9-]{1,39}$/.test(urlSlug)) localStorage.setItem("brand_slug", urlSlug);
+
+const setHeadLink = (sel, attr, val) => { const el = document.querySelector(sel); if (el) el.setAttribute(attr, val); };
+
+const usePublicBrand = () => {
+  const [pb, setPb] = useState(null);
+  useEffect(() => {
+    const slug = localStorage.getItem("brand_slug");
+    if (!slug) return;
+    axios.get(`${API}/public/branding/${slug}`).then(({ data }) => {
+      setPb(data);
+      setHeadLink('link[rel="manifest"]', "href", `${API}/public/manifest/${slug}`);
+      if (data.logo_version) setHeadLink('link[rel="apple-touch-icon"]', "href", `${API}/public/logo/${slug}?size=180&v=${data.logo_version}`);
+      if (data.app_name) {
+        document.title = data.app_name;
+        setHeadLink('meta[name="apple-mobile-web-app-title"]', "content", data.app_name);
+      }
+    }).catch(() => localStorage.removeItem("brand_slug"));
+  }, []);
+  return pb;
+};
 
 export default function App() {
   const [lang, setLang] = useState(() => localStorage.getItem("lang") || "pl");
   const [user, setUser] = useState(null);
+  const publicBrand = usePublicBrand();
   const t = I18N[lang];
   const changeLang = (l) => { setLang(l); localStorage.setItem("lang", l); };
   useEffect(() => {
@@ -28,7 +52,7 @@ export default function App() {
   };
   if (user === null) return <div className="app-shell" data-testid="auth-loading" />;
   if (user === false) {
-    return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} /><Toaster theme="dark" position="top-center" /></>;
+    return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} brand={publicBrand} /><Toaster theme="dark" position="top-center" /></>;
   }
   return <Dashboard t={t} lang={lang} setLang={changeLang} user={user} onLogout={logout} onUserChange={setUser} />;
 }
@@ -122,6 +146,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
     if (!user.theme && !brand.loaded) return;
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
+    if (user.theme) localStorage.setItem("theme_user", "1"); else localStorage.removeItem("theme_user");
     const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg);
   }, [theme, user.theme, brand.loaded]);
@@ -201,12 +226,14 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
           </span>
         </div>
 
-        {view !== "settings" && chambers.length > 0 && (
+        {(view === "chambers" || view === "data") && chambers.length > 0 && (
           <ChamberSwitch chambers={chambers} selected={ch?.id} setSelected={setSelected} t={t} />
         )}
 
         {devices && devices.length === 0 && view !== "settings" ? (
           <div className="panel panel-pad" data-testid="no-devices" style={{ color: "var(--muted)", textAlign: "center", fontSize: 13 }}>{t.noDevices}</div>
+        ) : view === "overview" && devices ? (
+          <OverviewView t={t} devices={devices} states={states} onOpen={(id) => { pickDevice(id); setView("chambers"); }} />
         ) : view === "settings" ? (
           <SettingsView t={t} chambers={chambers} thresholds={thresholds} send={send} saveThreshold={saveThreshold}
             notifPerm={notifPerm} requestNotif={requestNotif} config={config} onConfigSaved={setConfig}
@@ -220,7 +247,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange }) {
           <DataView t={t} ch={ch} deviceId={devId} plant={state?.plant} history={history} plantHistory={plantHistory} events={events} />
         )}
       </div>
-      <BottomNav view={view} setView={setView} t={t} />
+      <BottomNav view={view} setView={setView} t={t} showOverview={(devices?.length || 0) > 1} />
       <Toaster theme={theme === "light" ? "light" : "dark"} position="top-center" />
     </div>
   );
