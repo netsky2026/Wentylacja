@@ -34,6 +34,34 @@
   --warn-text: #6b4e14; --warn-bg: #FBF3E2; --warn-border: #E2C88F; --c-power: #b07d1e; --c-water: #2f6f93; --c-co2: #8a6b2f; --c-cl: #4b5f7a; --c-cr: #3d6b52; --c-chim: #4b5563;
   color-scheme: light;
 }
+[data-theme="red"] {
+  --bg: #0E0909; --card: #181011; --border: #2F1D1F; --text: #F7F1F1; --muted: #A08C8E;
+  --primary: #C8323F; --primary-rgb: 200,50,63; --on-primary: #FFFFFF; --primary-text: #f6d5d8;
+  --accent: #FF6B5E; --green: #34C779;
+  --surface: #120B0C; --surface2: #33201F; --grid: #2a1a1c; --axis: #7d6a6c; --off: #4d3a3c; --frame: #5e4a4c;
+  --nav-bg: rgba(20,12,13,0.88); --thumb: #3b2628;
+}
+[data-theme="teal"] {
+  --bg: #061010; --card: #0E1A1A; --border: #1D3030; --text: #EEF7F6; --muted: #86A09D;
+  --primary: #14B8A6; --primary-rgb: 20,184,166; --on-primary: #041311; --primary-text: #ccf5ef;
+  --surface: #081414; --surface2: #1A2E2D; --grid: #142525; --axis: #648582; --off: #34504d; --frame: #46625f;
+  --nav-bg: rgba(8,18,18,0.88); --thumb: #1f3836;
+}
+[data-theme="graphite"] {
+  --bg: #111214; --card: #1A1C1F; --border: #2E3135; --text: #F4F5F6; --muted: #9A9FA6;
+  --primary: #E5E7EB; --primary-rgb: 229,231,235; --on-primary: #111214; --primary-text: #f4f5f6;
+  --surface: #141518; --surface2: #2C3035; --grid: #25282c; --axis: #767b82; --off: #464a50; --frame: #5a5f66;
+  --nav-bg: rgba(20,21,24,0.9); --thumb: #34383d;
+}
+[data-theme="lightblue"] {
+  --bg: #F2F5F9; --card: #FFFFFF; --border: #D3DCE7; --text: #0F172A; --muted: #556275;
+  --primary: #1D5FD1; --primary-rgb: 29,95,209; --on-primary: #FFFFFF; --primary-text: #12397f;
+  --accent: #D92D20; --green: #15803D;
+  --surface: #EEF2F7; --surface2: #DDE5EF; --grid: #E2E8F0; --axis: #64748B; --off: #c3ccd8; --frame: #7a8696;
+  --nav-bg: rgba(255,255,255,0.92); --glass: linear-gradient(160deg, #d3e2f3 0%, #bcd1ea 100%); --thumb: #c8d2df;
+  --warn-text: #6b4e14; --warn-bg: #FBF3E2; --warn-border: #E2C88F; --c-power: #b07d1e; --c-water: #2f6f93; --c-co2: #8a6b2f; --c-cl: #4b5f7a; --c-cr: #3d6b52; --c-chim: #4b5563;
+  color-scheme: light;
+}
 
 * { box-sizing: border-box; }
 

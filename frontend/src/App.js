@@ -288,7 +288,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
         )}
       </div>
       <BottomNav view={view} setView={setView} t={t} showOverview={(devices?.length || 0) > 1} />
-      <Toaster theme={theme === "light" ? "light" : "dark"} position="top-center" />
+      <Toaster theme={["light", "lightblue"].includes(theme) ? "light" : "dark"} position="top-center" />
     </div>
   );
 }
