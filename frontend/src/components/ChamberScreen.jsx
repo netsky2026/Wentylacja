@@ -57,6 +57,6 @@ export const ChamberScreen = ({ ch, t, send, canControl, dev, canRename, onRenam
       <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "center", marginTop: 8 }}>{t.curtainHint}</div>
     </div>
 
-    {canControl && <VentControl ch={ch} t={t} send={send} />}
+    {canControl && <VentControl ch={ch} t={t} send={send} autoReturn={dev?.auto_return} />}
   </div>
 );

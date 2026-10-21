@@ -12,7 +12,7 @@ const Row = ({ label, value, onChange, onCommit, testid }) => (
   </div>
 );
 
-export const VentControl = ({ ch, t, send }) => {
+export const VentControl = ({ ch, t, send, autoReturn }) => {
   const manual = ch.mode === "manual";
   const m = ch.manual || {};
   const [cl, setCl] = useState(0);
@@ -42,7 +42,7 @@ export const VentControl = ({ ch, t, send }) => {
               }}>{label}</button>
           ))}
         </div>
-        {manual && <div data-testid={`chamber-${ch.id}-auto-return`} style={{ fontSize: 11, color: "var(--warn-text)", marginTop: 8, textAlign: "center" }}>{t.autoReturn}</div>}
+        {manual && autoReturn && <div data-testid={`chamber-${ch.id}-auto-return`} style={{ fontSize: 11, color: "var(--warn-text)", marginTop: 8, textAlign: "center" }}>{t.autoReturn.replace("{h}", autoReturn)}</div>}
       </div>
       {manual && ch.on && (
         <div className="fade-in">

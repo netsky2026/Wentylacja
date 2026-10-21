@@ -470,12 +470,14 @@ async def log_event(level: str, message: str, meta: dict, device_id: Optional[st
 # Registry, migration, background tasks
 # ============================================================
 async def load_registry():
-    clients = {str(c["_id"]): c["name"] async for c in db.clients.find({})}
+    cdocs = {str(c["_id"]): c async for c in db.clients.find({})}
+    clients = {k: c["name"] for k, c in cdocs.items()}
     DEVICES.clear()
     async for d in db.devices.find({}):
         DEVICES[d["device_id"]] = {"client_id": d["client_id"], "client_name": clients.get(d["client_id"], "?"),
                                    "name": d["name"], "chambers": d["chambers"], "simulated": d.get("simulated", False),
-                                   "chamber_names": d.get("chamber_names", {})}
+                                   "chamber_names": d.get("chamber_names", {}),
+                                   "auto_return": cdocs.get(d["client_id"], {}).get("auto_return", "00:00")}
     THRESHOLDS.clear()
     async for t in db.device_thresholds.find({}):
         THRESHOLDS[(t["device_id"], t["chamber"])] = {"temp_max": t["temp_max"], "co2_max": t["co2_max"]}
@@ -641,22 +643,23 @@ async def alarm_notifier():
 PL_TZ = ZoneInfo("Europe/Warsaw")
 
 
-async def reset_manual_to_auto():
+async def reset_manual_to_auto(hm: Optional[str] = None):
     for device_id, st in list(gateway.states.items()):
+        if hm and (DEVICES.get(device_id) or {}).get("auto_return") != hm:
+            continue
         for ch in st.get("chambers", []):
             if ch.get("mode") == "manual" and gateway.publish_command(
                     device_id, {"type": "set_mode", "chamber": ch["id"], "value": "auto", "request_id": uuid.uuid4().hex}):
-                await log_event("info", f"{dev_label(device_id)} – {ch_name(device_id, ch['id'])}: automatyczny powrót do AUTO (00:00)",
+                await log_event("info", f"{dev_label(device_id)} – {ch_name(device_id, ch['id'])}: automatyczny powrót do AUTO ({hm or 'ręcznie'})",
                                 {"user": "system"}, device_id)
 
 
 async def midnight_auto():
     while True:
-        now = datetime.now(PL_TZ)
-        nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
-        await asyncio.sleep((nxt.astimezone(timezone.utc) - now.astimezone(timezone.utc)).total_seconds())
+        now = datetime.now(timezone.utc)
+        await asyncio.sleep(62 - now.second - now.microsecond / 1e6)
         try:
-            await reset_manual_to_auto()
+            await reset_manual_to_auto(datetime.now(PL_TZ).strftime("%H:%M"))
         except Exception as e:
             logger.error("midnight auto reset failed: %s", e)
 
@@ -716,7 +719,7 @@ def device_view(device_id: str, user: dict) -> dict:
     d = DEVICES[device_id]
     out = {"device_id": device_id, "name": d["name"], "client_id": d["client_id"], "client_name": d["client_name"],
            "chambers": d["chambers"], "chamber_names": d["chamber_names"], "simulated": d["simulated"],
-           "online": gateway.is_online(device_id),
+           "auto_return": d["auto_return"], "online": gateway.is_online(device_id),
            "state": gateway.states.get(device_id)}
     if user["role"] == "superadmin":
         out.update({"state_topic": state_topic(device_id), "command_topic": command_topic(device_id)})
@@ -1130,6 +1133,25 @@ async def delete_device(device_id: str, user: dict = Depends(require("superadmin
     gateway.states.pop(device_id, None)
     await log_event("info", f"Usunięto sterownik: {label}", {"user": user["email"]}, client_id=cid)
     return {"ok": True}
+
+
+class AutoReturnIn(BaseModel):
+    time: str = Field(pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
+
+
+@api.get("/auto-return")
+async def get_auto_return(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    return {"time": c.get("auto_return", "00:00")}
+
+
+@api.put("/auto-return")
+async def put_auto_return(body: AutoReturnIn, client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    await db.clients.update_one({"_id": c["_id"]}, {"$set": {"auto_return": body.time}})
+    await load_registry()
+    await log_event("info", f"Powrót do AUTO: {body.time or 'wyłączony'}", {"user": user["email"]}, client_id=str(c["_id"]))
+    return {"time": body.time}
 
 
 @api.post("/admin/auto-reset")

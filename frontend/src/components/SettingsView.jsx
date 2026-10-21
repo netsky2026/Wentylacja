@@ -4,6 +4,7 @@ import { BrokerForm } from "@/components/BrokerForm";
 import { InstallCard } from "@/components/InstallCard";
 import { AccountCard, UsersCard } from "@/components/AccountCards";
 import { AlarmRecipientsCard } from "@/components/AlarmRecipientsCard";
+import { AutoReturnCard } from "@/components/AutoReturnCard";
 import { FleetCard } from "@/components/FleetCard";
 import { ChamberNameEdit } from "@/components/ChamberNameEdit";
 import { SiteCard } from "@/components/SiteCard";
@@ -85,6 +86,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
       </div>
 
       {isAdmin && (user.role !== "superadmin" || clientId) && <>
+        <AutoReturnCard key={`r-${clientId}`} t={t} clientId={clientId} clientName={dev?.client_name} onSaved={reloadDevices} />
         <AlarmRecipientsCard key={`a-${clientId}`} t={t} clientId={clientId} clientName={dev?.client_name} />
         <UsersCard key={`u-${clientId}`} t={t} me={user} clientId={clientId} clientName={dev?.client_name} />
       </>}
