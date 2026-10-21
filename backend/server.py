@@ -1499,6 +1499,36 @@ async def list_cycles(device_id: str, chamber: int, user: dict = Depends(require
     return {"cycles": [await cycle_view(c) for c in rows]}
 
 
+CYCLE_HEAD = ["Komora", "Wstawienie", "Koniec", "Dni", "Sztuk", "Woda m³", "Woda na sztukę l", "l/szt./dzień",
+              "Prąd kWh (cała chlewnia)", "Wpisał", "Zakończył"]
+
+
+async def cycle_rows(device_id: str, chamber: Optional[int]) -> list:
+    q = {"device_id": device_id, **({"chamber": chamber} if chamber is not None else {})}
+    out = []
+    for c in await db.cycles.find(q).sort([("chamber", 1), ("start", -1)]).to_list(2000):
+        v = await cycle_view(c)
+        ph = v["water_per_head_l"]
+        out.append([ch_name(device_id, v["chamber"]), v["start"], v["end"] or "trwa", v["days"], v["animals"],
+                    round(v["water_l"] / 1000, 3), ph, round(ph / v["days"], 3) if ph is not None else None, v["kwh"],
+                    v["started_by"], v["ended_by"]])
+    return out
+
+
+@api.get("/devices/{device_id}/cycles/export")
+async def cycles_export(device_id: str, fmt: str = "xlsx", chamber: Optional[int] = None, user: dict = Depends(require("viewer"))):
+    d = device_or_404(user, device_id)
+    rows = await cycle_rows(device_id, chamber)
+    fname = f"chowy_{device_id}{'' if chamber is None else f'_komora{chamber + 1}'}_{local_day()}"
+    if fmt == "csv":
+        txt = "\n".join(";".join("" if x is None else str(x).replace(";", " ").replace(".", ",") if isinstance(x, float) else str(x).replace(";", " ")
+                                  for x in r) for r in [CYCLE_HEAD] + rows)
+        return file_response(("\ufeff" + txt + "\n").encode(), fname + ".csv", "text/csv; charset=utf-8")
+    widths = {"A": 18, "B": 12, "C": 12, "D": 6, "E": 8, "F": 10, "G": 16, "H": 12, "I": 22, "J": 26, "K": 26}
+    data = await asyncio.to_thread(xlsx_bytes, [("Chowy", [CYCLE_HEAD] + rows, widths)])
+    return file_response(data, fname + ".xlsx", XLSX_MIME)
+
+
 @api.post("/devices/{device_id}/chambers/{chamber}/cycles")
 async def start_cycle(device_id: str, chamber: int, body: CycleIn, user: dict = Depends(require("operator"))):
     d = device_or_404(user, device_id)

@@ -121,3 +121,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: per-farm auto-return time (clients.auto_return, GET/PUT /api/auto-return, minute ticker), AutoReturnCard. Tested iteration_23.
 - 2026-06: per-chamber water meters (water_total_l/water_lpm optional in state), meter_daily (Warsaw day, $inc deltas from meter_last), cycles collection (start/end/animals/started_by/ended_by, operator+, event log with email), GET usage/range + xlsx (openpyxl), CycleCard on chamber screen, UsageRangeCard in Dane.
 - 2026-06: water per head in cycles (+% vs avg previous), history export Excel default (/history/xlsx) or CSV, usage range CSV option, monthly e-mail report with xlsx attachments to farm admins (1st day 06:00 Warsaw, monthly_reports dedupe, clients.monthly_report toggle, POST /api/monthly-report/send), MonthlyReportCard.
+- 2026-06: cycle history export GET /devices/{id}/cycles/export?fmt=xlsx|csv&chamber= (buttons in Historia chowów).

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { PiggyBank, Plus, Square, History } from "lucide-react";
+import { PiggyBank, Plus, Square, History, FileSpreadsheet } from "lucide-react";
 import { API } from "@/api";
 
 const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Warsaw" });
@@ -34,7 +34,13 @@ const StartForm = ({ t, onStart, onCancel }) => {
   );
 };
 
-const Past = ({ t, rows }) => (<>
+const Past = ({ t, rows, deviceId }) => (<>
+  <div className="flex gap-2" style={{ marginTop: 10 }}>
+    <a className="action-btn" href={`${API}/devices/${deviceId}/cycles/export?fmt=xlsx`} data-testid="cycle-export-xlsx"
+      style={{ flex: 1, padding: 8, fontSize: 12, textDecoration: "none", justifyContent: "center" }}><FileSpreadsheet size={13} /> {t.cycleExport}</a>
+    <a className="action-btn" href={`${API}/devices/${deviceId}/cycles/export?fmt=csv`} data-testid="cycle-export-csv"
+      style={{ padding: "8px 12px", fontSize: 12, textDecoration: "none" }}>CSV</a>
+  </div>
   {avgOf(rows) != null && <div style={{ fontSize: 12, marginTop: 10 }} data-testid="cycle-avg-per-head">{t.avgPerHead}: <b>{avgOf(rows).toFixed(2)} l / {t.cycleDay}</b></div>}
   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }} data-testid="cycle-history">
     {rows.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>{t.cycleNoHistory}</div>}
@@ -86,7 +92,7 @@ export const CycleCard = ({ t, ch, deviceId, canEdit }) => {
           : <button className="action-btn" onClick={() => setForm(true)} data-testid="cycle-new" style={{ flex: 1, padding: 9, fontSize: 13, color: "var(--primary)", borderColor: "var(--primary)" }}><Plus size={13} /> {t.cycleNew}</button>)}
         <button className="action-btn" onClick={() => setHist(!hist)} data-testid="cycle-history-toggle" style={{ flex: 1, padding: 9, fontSize: 13 }}><History size={13} /> {t.cycleHistory}</button>
       </div>
-      {hist && <Past t={t} rows={rows.filter((c) => c.end)} />}
+      {hist && <Past t={t} rows={rows.filter((c) => c.end)} deviceId={deviceId} />}
     </div>
   );
 };
