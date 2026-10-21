@@ -1,0 +1,19 @@
+{
+  "summary": "Iteration 19: Verified the slug migration on GET /api/clients, the QR button now shown on every client row, the chamber-rename fix for the 5s poll reset, and the no-op rename. Backend: 21/21 pass (new iteration19 tests plus iteration17/18 regression, run serially). Frontend at 390x844 as superadmin: every client row shows the client-qr-<id> button, including a client inserted without a slug. The QR images were decoded with jsQR and give <origin>/?klient=stara-ferma-ui, /?klient=kowalski and /?klient=marco-polo. Typing 'Poro' slowly and waiting 7s keeps the value 'Poro' and focus stays in the input. Save, reset to empty and cancel all work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iteration19_slug_migration.py", "/app/test_reports/pytest/pytest_it19.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "clients.slug has no unique index; unique_slug() check-then-insert can race (two concurrent creates or migrate_slugs calls). Consider db.clients.create_index('slug', unique=True, partialFilterExpression={'slug': {'$type': 'string', '$gt': ''}}).",
+    "migrate_slugs() runs on every GET /api/clients; cheap, but it could also run once at startup.",
+    "FleetCard.jsx line 148: the extra {} around the client-qr button is no longer needed (cosmetic).",
+    "Test isolation: running test_iteration18 and test_iteration19 in parallel with xdist (pytest.ini default -n) can collide on kowalski-a chamber names. Run them with -n 0."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration19_slug_migration.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary clients 'Stara Ferma Test' and 'Stara Ferma UI' were inserted directly into Mongo without a slug, then deleted through DELETE /api/clients. Chamber names were reset. Final DB: only Marco Polo (marco-polo) and Ferma Kowalski (kowalski); kowalski-a chamber_names is {}.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The welcome page needs a click on welcome-login-button before the login form appears. Run the chamber-rename pytest files with -n 0 (pytest.ini enables xdist). QR decoding: inject jsQR from the CDN and draw qr-image onto a canvas."
+}
