@@ -5,6 +5,7 @@ import { InstallCard } from "@/components/InstallCard";
 import { AccountCard, UsersCard } from "@/components/AccountCards";
 import { AlarmRecipientsCard } from "@/components/AlarmRecipientsCard";
 import { FleetCard } from "@/components/FleetCard";
+import { SiteCard } from "@/components/SiteCard";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold }) => {
@@ -88,6 +89,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
       {user.role === "superadmin" && <>
         <FleetCard t={t} reloadDevices={reloadDevices} />
         <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
+        <SiteCard t={t} />
       </>}
       <InstallCard t={t} />
     </div>

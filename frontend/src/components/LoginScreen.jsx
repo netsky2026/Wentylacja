@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { LogIn } from "lucide-react";
+import { LogIn, ArrowLeft } from "lucide-react";
 import { API, formatApiError } from "@/api";
 
-export const LoginScreen = ({ t, onLogin, lang, setLang, brand }) => {
+export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack }) => {
   useEffect(() => {
     if (brand?.theme && !localStorage.getItem("theme_user")) document.documentElement.dataset.theme = brand.theme;
   }, [brand]);
@@ -29,7 +29,10 @@ export const LoginScreen = ({ t, onLogin, lang, setLang, brand }) => {
     <div className="app-shell">
       <div className="mobile-wrap fade-in" style={{ maxWidth: 420, paddingTop: "calc(12vh + env(safe-area-inset-top))" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 28 }}>
-          <img src={logo} alt="" data-testid="login-logo" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "contain" }} />
+          <div className="flex items-center gap-3">
+            {onBack && <button className="sp-btn" onClick={onBack} data-testid="login-back" aria-label={t.back}><ArrowLeft size={16} /></button>}
+            <img src={logo} alt="" data-testid="login-logo" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "contain" }} />
+          </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>
             {["pl", "en"].map((l) => (
               <button key={l} data-testid={`login-lang-${l}`} onClick={() => setLang(l)} className="font-head"

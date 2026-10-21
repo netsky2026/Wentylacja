@@ -4,6 +4,7 @@ import { Toaster, toast } from "sonner";
 import { I18N } from "@/i18n";
 import { API, refreshSession, setOnAuthLost } from "@/api";
 import { LoginScreen } from "@/components/LoginScreen";
+import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { OverviewView } from "@/components/OverviewView";
 import { ChamberScreen } from "@/components/ChamberScreen";
 import { DataView } from "@/components/DataView";
@@ -38,6 +39,7 @@ const usePublicBrand = () => {
 export default function App() {
   const [lang, setLang] = useState(() => localStorage.getItem("lang") || "pl");
   const [user, setUser] = useState(null);
+  const [showLogin, setShowLogin] = useState(false);
   const publicBrand = usePublicBrand();
   const t = I18N[lang];
   const changeLang = (l) => { setLang(l); localStorage.setItem("lang", l); };
@@ -48,11 +50,16 @@ export default function App() {
   }, []);
   const logout = async () => {
     try { await axios.post(`${API}/auth/logout`); } catch (e) { /* noop */ }
+    setShowLogin(true);
     setUser(false);
   };
   if (user === null) return <div className="app-shell" data-testid="auth-loading" />;
+  if (user === false && !showLogin && !localStorage.getItem("brand_slug")) {
+    return <WelcomeScreen t={t} lang={lang} setLang={changeLang} onLogin={() => setShowLogin(true)} />;
+  }
   if (user === false) {
-    return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} brand={publicBrand} /><Toaster theme="dark" position="top-center" /></>;
+    return <><LoginScreen t={t} onLogin={setUser} lang={lang} setLang={changeLang} brand={publicBrand}
+      onBack={localStorage.getItem("brand_slug") ? undefined : () => setShowLogin(false)} /><Toaster theme="dark" position="top-center" /></>;
   }
   return <Dashboard t={t} lang={lang} setLang={changeLang} user={user} onLogout={logout} onUserChange={setUser} />;
 }

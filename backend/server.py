@@ -924,6 +924,23 @@ async def public_manifest(slug: str):
                         media_type="application/manifest+json")
 
 
+class SiteIn(BaseModel):
+    phone: str = Field(default="", max_length=40, pattern=r"^[0-9+ ()-]*$")
+    email: str = Field(default="", max_length=254, pattern=r"^([^@\s;,]+@[^@\s;,]+\.[^@\s;,]+)?$")
+
+
+@api.get("/public/site")
+async def public_site():
+    doc = await db.site_settings.find_one({"_id": "main"}) or {}
+    return {"phone": doc.get("phone", ""), "email": doc.get("email", "")}
+
+
+@api.put("/site")
+async def put_site(body: SiteIn, user: dict = Depends(require("superadmin"))):
+    await db.site_settings.update_one({"_id": "main"}, {"$set": {"phone": body.phone.strip(), "email": body.email.strip()}}, upsert=True)
+    return await public_site()
+
+
 @api.get("/branding")
 async def branding(client_id: Optional[str] = None, user: dict = Depends(require("viewer"))):
     cid = client_id if user["role"] == "superadmin" else user.get("client_id")
