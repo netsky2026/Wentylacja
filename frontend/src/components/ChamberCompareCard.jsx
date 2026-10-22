@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer, LabelList } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer } from "recharts";
 import { Scale, Trophy, FileSpreadsheet } from "lucide-react";
 import { API, chName } from "@/api";
 
 const fmt = (v, d = 3) => (v == null ? "–" : String(+v.toFixed(d)).replace(".", ","));
 
+const TopLabel = ({ x, y, width, value }) => (
+  <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={9} style={{ fill: "var(--text)" }}>{fmt(value)}</text>
+);
+
 export const ChamberCompareCard = ({ t, dev }) => {
   const [rows, setRows] = useState(null);
   useEffect(() => {
-    axios.get(`${API}/devices/${dev.device_id}/cycles/compare`).then(({ data }) => setRows(data.chambers)).catch(() => setRows([]));
+    axios.get(`${API}/devices/${dev.device_id}/cycles/compare`).then(({ data }) => setRows(data.chambers)).catch(() => setRows(false));
   }, [dev.device_id]);
-  if (!rows) return null;
+  if (rows === null) return null;
+  if (rows === false) return <div className="panel panel-pad" style={{ fontSize: 12, color: "var(--accent)" }} data-testid="chamber-compare-error">{t.loadFailed}</div>;
   const named = rows.map((r) => ({ ...r, label: chName(t, dev, r.chamber) }));
   const data = named.filter((r) => r.cost_per_head != null);
   const best = data.length ? data.reduce((a, b) => (b.cost_per_head < a.cost_per_head ? b : a)) : null;
@@ -27,9 +32,8 @@ export const ChamberCompareCard = ({ t, dev }) => {
             <BarChart data={data} margin={{ top: 16, right: 4, left: 0, bottom: 0 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} interval={0} />
               <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => fmt(v)} />
-              <Bar dataKey="cost_per_head" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="cost_per_head" radius={[4, 4, 0, 0]} label={(p) => <TopLabel key={p.index} {...p} />}>
                 {data.map((d) => <Cell key={d.chamber} fill={d.chamber === best.chamber ? "var(--green)" : "var(--primary)"} />)}
-                <LabelList dataKey="cost_per_head" position="top" formatter={(v) => fmt(v)} style={{ fontSize: 9, fill: "var(--text)" }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

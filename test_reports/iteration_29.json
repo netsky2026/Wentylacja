@@ -1,0 +1,25 @@
+{
+  "summary": "Tested the 'Porównanie komór' (chamber comparison) feature from start to finish. Backend: 7 of 7 pytest tests pass. They cover response shape for all 6 chambers, averages over finished cycles only (the active cycle is excluded), kWh split when two chambers overlap on the same day, consistency with GET /cycles?chamber=N, nulls for chambers with no finished cycles, tenant scope (403/404 for another client's device, 401 without login), XLSX with 2 sheets and the header on row 6, and the CSV staying unchanged. Frontend (as Kowalski admin, mobile 390px and desktop 1920px): empty state works, and with seeded data the best chamber (Komora 4, 0,096 zł) shows in green, the bar chart has 3 bars, the table shows 6 rows with the best row green, and the XLSX link downloads chowy_kowalski-a_<date>.xlsx. No horizontal overflow at 390px (scrollWidth 390) and Y-axis labels are not clipped. One minor UI bug: the value labels on top of the bars (LabelList) never render.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "GET /api/devices/{id}/cycles/compare", "issue": "'cycles' counts finished cycles that have no animals (cost_per_head null), so a chamber can show 1 batch with cost '–'. Consider counting only cycles that have a cost, or adding a separate count."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ChamberCompareCard bar chart", "issue": "The <LabelList position='top'> value labels on the bars never render, even after waiting 5s. The only SVG <text> elements are the axis ticks. Recharts version is 3.6.0. CycleCostChart.jsx uses the same pattern, so it probably has the same problem (not tested there). Untested fix ideas: use the Bar label={{position:'top', ...}} prop, or isAnimationActive={false}.", "selector": "[data-testid=chamber-compare-card] .recharts-label-list", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dane tab", "issues": ["When the compare API fails, the catch sets rows=[] and the user sees the empty-state text instead of an error message", "The 'Zużycie w okresie' card (existing, not part of this feature) uses the browser's native date inputs instead of the shadcn calendar"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration29_chamber_compare.py", "/app/test_reports/pytest/pytest_it29.xml"],
+  "action_items": ["(LOW) Fix the bar value labels in ChamberCompareCard and probably in CycleCostChart (LabelList does not render in recharts 3.6)", "(LOW) Show an error state when /cycles/compare fails", "(Optional) Decide how 'cycles' should count finished cycles that have no cost"],
+  "critical_code_review_comments": ["chamber_compare runs one usage_between DB query per finished cycle. Fine for now, but it is O(n) queries, and the xlsx export runs cycle_ctx and the views twice (cycle_rows + chamber_compare)", "The avg/rounding logic is correct; days is null when a chamber has no finished cycles"],
+  "updated_files": ["/app/backend/tests/test_iteration29_chamber_compare.py"],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "test_credentials": "admin@chlewnia.pl / Wentylacja!2026; kowalski.admin@kowalski.pl / KowalskiAdm!2026",
+  "seed_data_creation": "Temporary cycles in chambers 2-5 and meter_daily docs tagged test_tag='it29' for days 2026-08-05, 08-20, 09-07 and 09-12. All removed afterwards. The 2 active cycles already in chambers 0 and 1 were left alone. Rates are still kwh 0.85 / m3 6.5.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the test with REACT_APP_BACKEND_URL set; KEEP_SEED=1 keeps the seed for UI checks, and the ids are saved in /tmp/it29_cycles.json for manual cleanup. The landing page needs a click on 'ZALOGUJ' before the login form appears. Server date is 2026-10-22."
+}

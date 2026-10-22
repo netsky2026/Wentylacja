@@ -1,7 +1,11 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, LabelList } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer } from "recharts";
 import { Trophy } from "lucide-react";
 
 const fmt = (v) => v.toFixed(3).replace(".", ",");
+
+const TopLabel = ({ x, y, width, value }) => (
+  <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={9} style={{ fill: "var(--text)" }}>{fmt(value)}</text>
+);
 
 export const CycleCostChart = ({ t, rows }) => {
   const data = rows.filter((c) => c.cost_per_head != null).sort((a, b) => a.start.localeCompare(b.start))
@@ -23,11 +27,10 @@ export const CycleCostChart = ({ t, rows }) => {
             <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => String(+v.toFixed(3)).replace(".", ",")} />
             <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", fontSize: 12 }}
               formatter={(v, _n, p) => [`${fmt(v)} zł${p.payload.running ? ` (${t.costChartRunning})` : ""}`, t.costPerHead]} />
-            <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive>
+            <Bar dataKey="v" radius={[4, 4, 0, 0]} label={(p) => <TopLabel key={p.index} {...p} />}>
               {data.map((d) => (
                 <Cell key={d.id} fill={best && d.id === best.id ? "var(--green)" : "var(--primary)"} fillOpacity={d.running ? 0.4 : 1} />
               ))}
-              <LabelList dataKey="v" position="top" formatter={(v) => fmt(v)} style={{ fontSize: 9, fill: "var(--text)" }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

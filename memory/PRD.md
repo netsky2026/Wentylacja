@@ -136,3 +136,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Dane kontaktowe klienta (clients.contact: phone/email/www/adres) edytowane przez superadmina w edytorze brandingu klienta; widoczne na ekranie logowania klienta (?klient=slug).
 - Admin klienta edytuje dane kontaktowe (GET/PUT /api/client-contact, karta ClientContactCard; superadmin – ta sama karta po wybraniu sterownika klienta; usunieto duplikat z FleetCard).
 - Wykres kosztu na sztuke kolejnych rzutow (CycleCostChart w historii chowow), najtanszy zakonczony wyrozniony, trwajacy jasniejszy.
+- Porownanie komor (GET /api/devices/{id}/cycles/compare; karta ChamberCompareCard w zakladce Dane; arkusz "Porownanie komor" w Excelu chowow): sredni koszt/szt. z zakonczonych rzutow, najlepsza komora wyrozniona.
