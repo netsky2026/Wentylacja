@@ -1574,6 +1574,20 @@ async def monthly_report_put(body: MonthlyIn, client_id: Optional[str] = None, u
     return {"enabled": body.enabled}
 
 
+@api.get("/client-contact")
+async def get_client_contact(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    return client_contact(await client_or_404(client_scope(user, client_id)))
+
+
+@api.put("/client-contact")
+async def put_client_contact(body: SiteIn, client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    contact = {k: v.strip() for k, v in body.model_dump().items()}
+    await db.clients.update_one({"_id": c["_id"]}, {"$set": {"contact": contact}})
+    await log_event("info", "Zmieniono dane kontaktowe klienta", {"user": user["email"]}, client_id=str(c["_id"]))
+    return contact
+
+
 class RatesIn(BaseModel):
     kwh: Optional[float] = Field(default=None, ge=0, le=100)
     m3: Optional[float] = Field(default=None, ge=0, le=1000)
