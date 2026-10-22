@@ -61,10 +61,10 @@ export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack, site }) 
             <LogIn size={16} /> {busy ? "…" : t.loginBtn}
           </button>
         </form>
-        {!brand && (site?.phone || site?.email) && (
+        {(brand ? Object.values(brand.contact || {}).some(Boolean) : site?.phone || site?.email) && (
           <div className="panel panel-pad" style={{ marginTop: 14 }} data-testid="login-contact">
             <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>{t.loginContact}</div>
-            <Contact site={site} />
+            <Contact site={brand ? brand.contact : site} full={!!brand} />
           </div>
         )}
       </div>

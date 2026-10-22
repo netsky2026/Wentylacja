@@ -816,6 +816,7 @@ class ClientPatch(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=40)
     slug: Optional[str] = Field(default=None, max_length=40, pattern=r"^([a-z0-9][a-z0-9-]{1,39})?$")
     theme: Optional[str] = Field(default=None, pattern=THEME_RX)
+    contact: Optional["SiteIn"] = None
 
 
 class DeviceIn(BaseModel):
@@ -894,7 +895,7 @@ async def list_clients(user: dict = Depends(require("superadmin"))):
         cid = str(c["_id"])
         out.append({"id": cid, "name": c["name"], "devices": sum(1 for d in DEVICES.values() if d["client_id"] == cid),
                     "display_name": c.get("display_name", ""), "theme": c.get("theme", "green"), "slug": c.get("slug", ""),
-                    "logo_version": c.get("logo_version") if c.get("logo_path") else None})
+                    "contact": client_contact(c), "logo_version": c.get("logo_version") if c.get("logo_path") else None})
     return {"clients": out}
 
 
@@ -935,6 +936,8 @@ async def client_or_404(client_id: str) -> dict:
 async def patch_client(client_id: str, body: ClientPatch, user: dict = Depends(require("superadmin"))):
     c = await client_or_404(client_id)
     upd = {k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump().items() if v is not None}
+    if "contact" in upd:
+        upd["contact"] = {k: v.strip() for k, v in upd["contact"].items()}
     if upd.get("slug") == "" and c.get("slug"):
         upd.pop("slug")
     if upd.get("slug") and await db.clients.find_one({"slug": upd["slug"], "_id": {"$ne": c["_id"]}}):
@@ -1011,10 +1014,15 @@ async def client_by_slug(slug: str) -> dict:
     return c
 
 
+def client_contact(c: dict) -> dict:
+    ct = c.get("contact") or {}
+    return {k: ct.get(k, "") for k in ("phone", "email", "address", "website")}
+
+
 @api.get("/public/branding/{slug}")
 async def public_branding(slug: str):
     c = await client_by_slug(slug)
-    return {"slug": slug, "app_name": c.get("display_name") or None, "theme": c.get("theme", "green"),
+    return {"slug": slug, "app_name": c.get("display_name") or None, "theme": c.get("theme", "green"), "contact": client_contact(c),
             "logo_version": c.get("logo_version") if c.get("logo_path") else None}
 
 
@@ -1065,6 +1073,9 @@ class SiteIn(BaseModel):
     email: str = Field(default="", max_length=254, pattern=r"^([^@\s;,]+@[^@\s;,]+\.[^@\s;,]+)?$")
     address: str = Field(default="", max_length=200)
     website: str = Field(default="", max_length=200, pattern=r"^([A-Za-z0-9.:/_?=&%#-]*)$")
+
+
+ClientPatch.model_rebuild()
 
 
 @api.get("/public/site")

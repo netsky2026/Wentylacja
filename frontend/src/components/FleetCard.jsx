@@ -6,6 +6,22 @@ import { API, formatApiError, siteLogoUrl } from "@/api";
 import { QrDialog } from "@/components/QrDialog";
 import { ThemeSelect } from "@/components/AccountCards";
 
+const CONTACT_FIELDS = [["phone", "+48 600 000 000"], ["email", "biuro@ferma.pl"], ["website", "www.ferma.pl"], ["address", "ul. Polna 1, 00-000 Wieś"]];
+const ClientContact = ({ c, t, onSave }) => {
+  const [f, setF] = useState({ phone: "", email: "", address: "", website: "", ...(c.contact || {}) });
+  return (
+    <div className="flex flex-col" style={{ gap: 4, fontSize: 11, color: "var(--muted)" }} data-testid={`brand-contact-${c.id}`}>{t.clientContact}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {CONTACT_FIELDS.map(([k, ph]) => (
+          <input key={k} className="num-input" style={{ fontSize: 13 }} placeholder={ph} value={f[k]} maxLength={k === "phone" ? 40 : 200}
+            onChange={(e) => setF({ ...f, [k]: e.target.value })} data-testid={`brand-contact-${k}-${c.id}`} />
+        ))}
+      </div>
+      <button className="action-btn" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => onSave({ contact: f })} data-testid={`brand-contact-save-${c.id}`}>{t.save}</button>
+    </div>
+  );
+};
+
 const BrandEditor = ({ c, t, onChanged, site }) => {
   const [qr, setQr] = useState(false);
   const [name, setName] = useState(c.display_name || "");
@@ -17,7 +33,8 @@ const BrandEditor = ({ c, t, onChanged, site }) => {
     catch (e) { toast.error(e.response?.status === 409 ? t.slugTaken : t.saveFailed); }
   };
   const patch = async (body) => {
-    try { await axios.patch(`${API}/clients/${c.id}`, body); onChanged(); toast.success(t.saved); } catch (e) { toast.error(t.saveFailed); }
+    try { await axios.patch(`${API}/clients/${c.id}`, body); onChanged(); toast.success(t.saved); }
+    catch (e) { toast.error(e.response?.status === 422 ? t.recipientInvalid : t.saveFailed); }
   };
   const upload = async (e) => {
     const file = e.target.files?.[0];
@@ -71,6 +88,7 @@ const BrandEditor = ({ c, t, onChanged, site }) => {
         {c.logo_version && <button className="sp-btn" onClick={removeLogo} data-testid={`brand-logo-remove-${c.id}`} aria-label={t.removeLogo}><Trash2 size={13} /></button>}
       </div>
       <div style={{ fontSize: 10, color: "var(--muted)" }}>{t.logoHint}</div>
+      <ClientContact c={c} t={t} onSave={patch} />
     </div>
   );
 };
