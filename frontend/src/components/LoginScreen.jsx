@@ -32,7 +32,9 @@ export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack, site }) 
         <div className="flex items-center justify-between" style={{ marginBottom: 28 }}>
           <div className="flex items-center gap-3">
             {onBack && <button className="sp-btn" onClick={onBack} data-testid="login-back" aria-label={t.back}><ArrowLeft size={16} /></button>}
-            <img src={logo} alt="" data-testid="login-logo" style={{ width: brand ? 56 : 76, height: brand ? 56 : 76, borderRadius: 16, objectFit: "contain" }} />
+            {brand?.logo_version || site?.logo_version
+              ? <img src={logo} alt="" data-testid="login-logo" style={{ width: brand ? 56 : 76, height: brand ? 56 : 76, borderRadius: 16, objectFit: "contain" }} />
+              : <img src="/marco-polo.png" alt="Grupa Marco-Polo" data-testid="login-logo" style={{ width: 170, height: "auto" }} />}
           </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>
             {["pl", "en"].map((l) => (

@@ -124,3 +124,6 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - 2026-06: cycle history export GET /devices/{id}/cycles/export?fmt=xlsx|csv&chamber= (buttons in Historia chowów).
 - 2026-06: main login (no brand slug) shows larger site logo + contact panel (data-testid login-contact) from site settings.
 - 2026-06: welcome page: large hero logo (site logo) + glass contact card under ZALOGUJ (welcome-contact-card).
+
+## 2026-06 Logo Marco-Polo
+- Swinka zastapiona logo GRUPA MARCO-POLO (bez tla) na ekranie powitalnym i logowania; ikony PWA/favicon wygenerowane z logo (ciemne tlo).

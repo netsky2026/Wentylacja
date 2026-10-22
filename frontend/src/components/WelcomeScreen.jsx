@@ -12,6 +12,10 @@ export const Contact = ({ site }) => {
   );
 };
 
+const BrandLogo = ({ site }) => site?.logo_version
+  ? <img src={siteLogoUrl(site)} alt="" className="welcome-rise welcome-logo-img" data-testid="welcome-brand-logo" />
+  : <img src="/marco-polo.png" alt="Grupa Marco-Polo" className="welcome-rise welcome-logo" data-testid="welcome-brand-logo" />;
+
 export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
   useEffect(() => { document.documentElement.dataset.theme = "green"; }, []);
   const pills = [[Thermometer, t.welcomeTemp], [Droplets, t.humidity], [Wind, "CO₂"]];
@@ -33,8 +37,7 @@ export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
         </header>
 
         <main className="welcome-main">
-          <img src={siteLogoUrl(site)} alt="" className="welcome-rise" data-testid="welcome-brand-logo"
-            style={{ width: 104, height: 104, objectFit: "contain", borderRadius: 22, marginBottom: 22, animationDelay: "40ms" }} />
+          <BrandLogo site={site} />
           <div className="welcome-rise flex items-center gap-2" style={{ animationDelay: "80ms", fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--primary)" }}>
             <span className="welcome-led" /> {t.welcomeKicker}
           </div>
