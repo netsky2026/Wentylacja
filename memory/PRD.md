@@ -127,3 +127,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 
 ## 2026-06 Logo Marco-Polo
 - Swinka zastapiona logo GRUPA MARCO-POLO (bez tla) na ekranie powitalnym i logowania; ikony PWA/favicon wygenerowane z logo (ciemne tlo).
+- Strona glowna (wlasciciela): kontakt rozszerzony o adres i strone www (pola w Ustawienia -> karta Strona, superadmin). Login klientow bez zmian (tylko tel/email).

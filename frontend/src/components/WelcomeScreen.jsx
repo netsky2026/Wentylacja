@@ -1,13 +1,16 @@
-import { LogIn, Phone, Mail, Thermometer, Droplets, Wind } from "lucide-react";
+import { LogIn, Phone, Mail, MapPin, Globe, Thermometer, Droplets, Wind } from "lucide-react";
 import { useEffect } from "react";
 import { siteLogoUrl } from "@/api";
 
-export const Contact = ({ site }) => {
-  if (!site?.phone && !site?.email) return null;
+export const Contact = ({ site, full }) => {
+  if (!site?.phone && !site?.email && !(full && (site?.address || site?.website))) return null;
+  const www = site?.website ? (/^https?:\/\//.test(site.website) ? site.website : `https://${site.website}`) : "";
   return (
     <div className="welcome-rise flex flex-wrap gap-x-6 gap-y-2" style={{ animationDelay: "420ms", fontSize: 13 }} data-testid="welcome-contact-block">
       {site.phone && <a href={`tel:${site.phone.replace(/[^0-9+]/g, "")}`} className="welcome-link" data-testid="welcome-contact-phone"><Phone size={14} /> {site.phone}</a>}
       {site.email && <a href={`mailto:${site.email}`} className="welcome-link" data-testid="welcome-contact-email"><Mail size={14} /> {site.email}</a>}
+      {full && site.website && <a href={www} target="_blank" rel="noopener noreferrer" className="welcome-link" data-testid="welcome-contact-website"><Globe size={14} /> {site.website.replace(/^https?:\/\//, "")}</a>}
+      {full && site.address && <span className="welcome-link" data-testid="welcome-contact-address"><MapPin size={14} /> {site.address}</span>}
     </div>
   );
 };
@@ -54,10 +57,10 @@ export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
           <button className="welcome-cta welcome-rise" style={{ animationDelay: "360ms" }} onClick={onLogin} data-testid="welcome-login-button">
             <LogIn size={18} /> {t.loginBtn}
           </button>
-          {(site?.phone || site?.email) && (
+          {(site?.phone || site?.email || site?.address || site?.website) && (
             <div className="welcome-rise welcome-contact" style={{ animationDelay: "420ms" }} data-testid="welcome-contact-card">
               <div style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>{t.loginContact}</div>
-              <Contact site={site} />
+              <Contact site={site} full />
             </div>
           )}
         </main>

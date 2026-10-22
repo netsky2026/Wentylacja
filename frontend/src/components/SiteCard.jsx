@@ -32,9 +32,11 @@ const SiteLogo = ({ t, site, reloadSite }) => {
 export const SiteCard = ({ t, site, reloadSite }) => {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  useEffect(() => { if (site) { setPhone(site.phone); setEmail(site.email); } }, [site]);
+  const [address, setAddress] = useState("");
+  const [website, setWebsite] = useState("");
+  useEffect(() => { if (site) { setPhone(site.phone); setEmail(site.email); setAddress(site.address || ""); setWebsite(site.website || ""); } }, [site]);
   const save = async () => {
-    try { await axios.put(`${API}/site`, { phone: phone.trim(), email: email.trim() }); reloadSite(); toast.success(t.saved); }
+    try { await axios.put(`${API}/site`, { phone: phone.trim(), email: email.trim(), address: address.trim(), website: website.trim() }); reloadSite(); toast.success(t.saved); }
     catch (e) { toast.error(e.response?.status === 422 ? t.recipientInvalid : t.saveFailed); }
   };
   return (
@@ -46,6 +48,8 @@ export const SiteCard = ({ t, site, reloadSite }) => {
       <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <input className="num-input" style={{ fontSize: 13 }} placeholder="+48 600 000 000" value={phone} onChange={(e) => setPhone(e.target.value)} data-testid="site-phone" />
         <input className="num-input" style={{ fontSize: 13 }} placeholder="biuro@firma.pl" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="site-email" />
+        <input className="num-input" style={{ fontSize: 13 }} placeholder="www.firma.pl" value={website} onChange={(e) => setWebsite(e.target.value)} data-testid="site-website" />
+        <input className="num-input" style={{ fontSize: 13 }} placeholder="ul. Przykładowa 1, 00-000 Miasto" value={address} onChange={(e) => setAddress(e.target.value)} data-testid="site-address" />
       </div>
       <button className="action-btn" onClick={save} data-testid="site-save" style={{ width: "100%", padding: 9, marginTop: 10, fontSize: 13 }}>{t.save}</button>
     </div>

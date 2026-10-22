@@ -1062,12 +1062,15 @@ async def public_site_manifest():
 class SiteIn(BaseModel):
     phone: str = Field(default="", max_length=40, pattern=r"^[0-9+ ()-]*$")
     email: str = Field(default="", max_length=254, pattern=r"^([^@\s;,]+@[^@\s;,]+\.[^@\s;,]+)?$")
+    address: str = Field(default="", max_length=200)
+    website: str = Field(default="", max_length=200, pattern=r"^([A-Za-z0-9.:/_?=&%#-]*)$")
 
 
 @api.get("/public/site")
 async def public_site():
     doc = await db.site_settings.find_one({"_id": "main"}) or {}
     return {"phone": doc.get("phone", ""), "email": doc.get("email", ""),
+            "address": doc.get("address", ""), "website": doc.get("website", ""),
             "logo_version": doc.get("logo_version") if doc.get("logo_path") else None}
 
 
@@ -1097,7 +1100,8 @@ async def delete_site_logo(user: dict = Depends(require("superadmin"))):
 
 @api.put("/site")
 async def put_site(body: SiteIn, user: dict = Depends(require("superadmin"))):
-    await db.site_settings.update_one({"_id": "main"}, {"$set": {"phone": body.phone.strip(), "email": body.email.strip()}}, upsert=True)
+    await db.site_settings.update_one({"_id": "main"}, {"$set": {"phone": body.phone.strip(), "email": body.email.strip(),
+                                                                   "address": body.address.strip(), "website": body.website.strip()}}, upsert=True)
     return await public_site()
 
 
