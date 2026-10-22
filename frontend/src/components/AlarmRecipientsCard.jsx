@@ -13,7 +13,7 @@ const OfflineMin = ({ t, value, onSave }) => {
         data-testid="offline-min-input" style={{ width: 70, fontSize: 13, padding: "6px 8px" }} />
       <span style={{ color: "var(--muted)" }}>min</span>
       <button className="action-btn" data-testid="offline-min-save" style={{ padding: "6px 10px", fontSize: 12 }}
-        onClick={() => { const m = parseInt(v, 10); if (Number.isNaN(m) || m < 0 || m > 1440) { toast.error(t.recipientInvalid); return; } onSave(m); }}>{t.save}</button>
+        onClick={() => { const m = parseInt(v, 10); if (Number.isNaN(m) || m < 0 || m > 1440) { toast.error(t.offlineInvalid); return; } onSave(m); }}>{t.save}</button>
     </div>
   );
 };

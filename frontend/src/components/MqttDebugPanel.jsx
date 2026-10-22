@@ -43,8 +43,8 @@ export const MqttDebugPanel = ({ t, deviceId, onClose }) => {
           <div style={{ color: "var(--muted)" }}>{ago(m.ts)} s {t.mqttAgo} · {m.size} B</div>
           <Box testid="mqtt-debug-payload">{pretty(m.payload)}</Box>
         </>)}
-        <div className="flex items-center gap-2" style={{ marginTop: 10 }}>
-          <button className="action-btn" onClick={ping} data-testid="mqtt-ping-btn" style={{ padding: "7px 12px", fontSize: 12, color: "var(--primary)", borderColor: "var(--primary)" }}>
+        <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 10 }}>
+          <button className="action-btn" onClick={ping} data-testid="mqtt-ping-btn" style={{ padding: "7px 12px", fontSize: 12, whiteSpace: "nowrap", color: "var(--primary)", borderColor: "var(--primary)" }}>
             <Send size={12} /> {t.pingSend}</button>
           {p && <span data-testid="mqtt-ping-result" className="flex items-center gap-1"
             style={{ color: ackS ? "var(--green)" : ago(p.sent_ts) > 15 ? "var(--accent)" : "var(--muted)" }}>

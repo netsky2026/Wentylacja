@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 32: tested MQTT ping/ack (backend + mobile 390px UI), alarm-settings offline_min (API + UI), connection monitor end-to-end (offline event -> 'offline' notification after offline_min=1 -> online event 'przerwa 1 min' -> 'conn_restored' notification), plus a regression run of iteration31. New features all work. Two minor issues: a wrong toast text for an invalid offline_min, and a flaky iteration31 test.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_iteration31_mqtt_debug_sessions.py::test_rejection_reasons", "issue": "Flaky: failed 2 of 3 runs. The final assert (last_message.ok True 4 s after simulated=true) sometimes fails. The probe and the 3rd run recovered within about 1.3 s, so the cause is likely the public HiveMQ broker being slow to reconnect after the simulator restarts. Test timing issue, not an app bug: poll for up to 10 s instead of sleeping 4 s."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AlarmRecipientsCard OfflineMin", "issue": "An invalid value (e.g. -1 or >1440) shows the toast 'Nieprawidłowy e-mail lub numer telefonu' (t.recipientInvalid). It should show a minutes-range message, e.g. 'Podaj 0–1440 min'. The API value correctly stays unchanged.", "selector": "[data-testid='offline-min-save']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings > MQTT panel (390px)", "issues": ["The 'Wyślij test' button label wraps onto 2 lines next to the result text. Consider white-space:nowrap or putting the result on its own line."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration32_ping_conn_monitor.py", "/app/test_reports/pytest/pytest_it32.xml"],
+  "action_items": [
+    "Use a dedicated validation message for an invalid offline_min in AlarmRecipientsCard (currently reuses recipientInvalid)",
+    "Optional: make the it31 test_rejection_reasons final check poll up to 10 s",
+    "Optional: nowrap on the mqtt-ping-btn label on mobile"
+  ],
+  "critical_code_review_comments": [
+    "conn_monitor: when the conn_state document has online=None (first run) and the device has never reported since the server started, no 'offline' event or alarm is ever raised. A controller that is offline at boot is never alerted. Consider treating online=None plus no data for more than OFFLINE_AFTER_S since STARTED_AT as offline.",
+    "Gateway.pings is in-memory only (lost on reload). Acceptable for a debug tool. Since the ack is checked before sanitize_state, an invalid state payload carrying the ack still counts as an acknowledgement. Probably intended, but worth documenting.",
+    "notify_conn only emails ADMIN_EMAIL when SMTP is configured and writes no alarm_notifications record for it, so superadmin deliveries are not visible in the 'recent' list.",
+    "MqttDebugPanel computes waiting/no-ack from the client clock (Date.now() vs server sent_ts). Clock skew can flip it to 'Brak potwierdzenia' early or late. Use server-relative timing (e.g. return server now in mqtt-debug).",
+    "server.py is 2078 lines; it should be split into modules (simulator, gateway, monitors, routes)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration32_ping_conn_monitor.py"],
+  "success_rate": {"backend": "100% (12/12 it32 tests passed when run sequentially; it31 14/15 plus 1 flaky)", "frontend": "100% of requested flows (ping ack green 'po 0,3 s', no-ack red after 15 s with sim off, offline-min save/persist/reload)"},
+  "seed_data_creation": "Temporary recipient test_it32_<tag>@example.com was added to Kowalski and then removed. Final state verified: Kowalski offline_min=5, recipients [], enabled true; kowalski-a simulated=true and online. Rates and /api/site not touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=... python -m pytest tests/test_iteration32_ping_conn_monitor.py -n 0 (MUST use -n 0: pytest.ini enables xdist, and TestConnMonitor disables the simulator, which breaks the parallel ping-ack test). The flow takes about 90 s: offline event ~30 s after the simulator is disabled, 'offline' notification ~63 s, online event + conn_restored ~20 s after re-enable. Creating or deleting files under /app/backend reloads uvicorn, which clears in-memory mqtt-debug and pings; wait ~10 s before testing. UI login: click welcome-login-button first.",
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026; client admin kowalski.admin@kowalski.pl / KowalskiAdm!2026 (from /app/memory/test_credentials.md)"
+}

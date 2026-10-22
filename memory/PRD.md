@@ -142,3 +142,5 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Specyfikacja PLC: deploy/SPECYFIKACJA_PLC.md + PDF (frontend/public/specyfikacja-plc.pdf).
 - Podglad MQTT (superadmin, GET /api/devices/{id}/mqtt-debug, MqttDebugPanel w FleetCard): ostatnia surowa wiadomosc + powod odrzucenia (state_error) + ostatnie polecenie (w pamieci).
 - Sesje: sid w JWT, wylogowanie uniewaznia sesje (revoked_sessions TTL), POST /api/auth/logout-all (tv+1), odblokowanie kont (GET /api/users locked, POST /api/users/{id}/unlock).
+- Ping z potwierdzeniem ack (POST /api/devices/{id}/ping, przycisk w Podgladzie MQTT; symulator potwierdza), specyfikacja PLC zaktualizowana.
+- conn_monitor: zdarzenia offline/online, alarm po offline_min (alarm_settings, domyslnie 5) do odbiorcow klienta + ADMIN_EMAIL, wiadomosc o przywroceniu.
