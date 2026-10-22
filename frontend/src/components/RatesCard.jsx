@@ -11,7 +11,7 @@ export const RatesCard = ({ t, clientId, clientName }) => {
   const [kwh, setKwh] = useState("");
   const [m3, setM3] = useState("");
   useEffect(() => {
-    axios.get(`${API}/rates${q}`).then(({ data }) => { setKwh(data.kwh ?? ""); setM3(data.m3 ?? ""); }).catch(() => {});
+    axios.get(`${API}/rates${q}`).then(({ data }) => { setKwh(data.kwh == null ? "" : String(data.kwh).replace(".", ",")); setM3(data.m3 == null ? "" : String(data.m3).replace(".", ",")); }).catch(() => {});
   }, [q]);
   const save = async () => {
     const body = { kwh: num(kwh), m3: num(m3) };

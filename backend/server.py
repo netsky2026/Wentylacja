@@ -1610,7 +1610,7 @@ def chamber_kwh(c: dict, end: str, ctx: dict) -> float:
     for day, kwh in ctx["days"].items():
         if not (c["start"] <= day <= end) or not kwh:
             continue
-        n = sum(1 for x in ctx["cycles"] if x["start"] <= day <= (x.get("end") or today))
+        n = len({x["chamber"] for x in ctx["cycles"] if x["start"] <= day <= (x.get("end") or today)})
         total += kwh / max(n, 1)
     return round(total, 2)
 
@@ -1633,7 +1633,7 @@ async def cycle_view(c: dict, ctx: Optional[dict] = None) -> dict:
             "days": (datetime.fromisoformat(end) - datetime.fromisoformat(c["start"])).days + 1,
             "water_l": w, "water_per_head_l": round(w / c["animals"], 2) if c.get("animals") else None,
             "kwh": u["kwh"], "kwh_chamber": kwh_ch, "cost_water": money(cw), "cost_power": money(cp), "cost_total": money(tot),
-            "cost_per_head": money(tot / c["animals"]) if tot is not None and c.get("animals") else None,
+            "cost_per_head": round(tot / c["animals"], 3) if tot is not None and c.get("animals") else None,
             "started_by": c.get("started_by"), "ended_by": c.get("ended_by")}
 
 

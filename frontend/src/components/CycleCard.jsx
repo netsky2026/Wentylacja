@@ -21,7 +21,7 @@ const Costs = ({ t, c }) => (<>
   {c.cost_total != null && (
     <div style={{ fontSize: 12, marginTop: 2 }} data-testid={`cycle-cost-${c.id}`}>
       {c.cost_water != null && <>{t.costWater}: {zl(c.cost_water)} · </>}{c.cost_power != null && <>{t.costPower}: {zl(c.cost_power)} · </>}
-      {t.costTotal}: <b style={{ color: "var(--primary)" }}>{zl(c.cost_total)}</b>{c.cost_per_head != null && <> ({zl(c.cost_per_head)} {t.costPerHead})</>}
+      {t.costTotal}: <b style={{ color: "var(--primary)" }}>{zl(c.cost_total)}</b>{c.cost_per_head != null && <> ({c.cost_per_head.toFixed(3).replace(".", ",")} zł {t.costPerHead})</>}
     </div>
   )}
 </>);

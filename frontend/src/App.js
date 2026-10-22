@@ -16,6 +16,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 document.documentElement.dataset.theme = localStorage.getItem("theme") || "green";
 const urlSlug = new URLSearchParams(window.location.search).get("klient");
 if (urlSlug && /^[a-z0-9][a-z0-9-]{1,39}$/.test(urlSlug)) localStorage.setItem("brand_slug", urlSlug);
+else localStorage.removeItem("brand_slug");
 
 const setHeadLink = (sel, attr, val) => { const el = document.querySelector(sel); if (el) el.setAttribute(attr, val); };
 

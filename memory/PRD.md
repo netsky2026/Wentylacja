@@ -131,3 +131,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Formularz kontaktowy na stronie glownej (POST /api/public/contact, honeypot, limit 3/IP/h + 30/h globalnie) -> e-mail z karty Strona.
 - Logo klienta (fallback Marco-Polo, backend/assets/marco-polo.png) w naglowku wszystkich eksportow Excel oraz inline w mailu raportu miesiecznego (HTML).
 - Backlog: SMS SMSAPI.pl (P1), refaktor server.py (P2).
+- Stawki za media (zl/kWh, zl/m3) per klient (GET/PUT /api/rates); koszt rzutu per komora: prad dzienny dzielony po rowno na komory z trwajacym rzutem; koszty w CycleCard, eksporcie chowow, raporcie zakresu/miesiecznym (Excel + tresc maila).

@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 27: tested client media rates (GET/PUT /api/rates with RBAC + validation), splitting each day's plant kWh between chambers (also checked with synthetic meter days on which only chamber 0 had a running cycle), cycle cost fields, cycle export xlsx/csv with the new cost columns, the 'Koszty' section in the usage-range xlsx (present when rates are set, absent when both are null), monthly report send, and the Settings rates card and CycleCard costs in the UI (superadmin mobile 390px + client admin desktop). Backend 10/10 pytest passed; all frontend flows passed.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "chamber_kwh (cycle_ctx)", "issue": "The divisor counts cycles, not distinct chambers. If a cycle ends today and a new cycle starts in the same chamber on the same day (or a backdated start overlaps an ended cycle), that day's kWh is split as if there were one more chamber. Suggest n = len({x['chamber'] for x in cycles active that day})."},
+    {"endpoint": "cycle_ctx", "issue": "Loads every meter_daily doc and cycle for the device on every request and loops over all days for each cycle. Fine now, but should filter by the cycle date range as history grows."}
+  ]},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [
+    {"screen": "Settings > rates-card", "issues": ["After reload the inputs show dot decimals ('0.9', '6.5') even though the user typed commas ('0,9'). Format the loaded values with a comma for Polish users."]},
+    {"screen": "Chamber cycle card", "issues": ["Mixed decimal separators: m³/kWh use dots ('0.16 m³', '3.51 kWh') while costs use commas ('1,06 zł')", "Cost per head is rounded to 2 decimals, so it shows '0,01 zł na sztukę' / '0,00 zł' early in a batch. Consider 3 decimals or hiding it when it is near zero."]}
+  ]},
+  "test_report_links": ["/app/backend/tests/test_iteration27_rates_costs.py", "/app/test_reports/pytest/pytest_iter27.xml"],
+  "action_items": ["(Optional) count distinct chambers instead of cycles in chamber_kwh", "(Optional) show loaded rates with a comma decimal and use consistent decimal separators in the cycle card"],
+  "critical_code_review_comments": [
+    "RatesCard num(): a whitespace-only input becomes Number(' ') = 0 instead of null. Trim the value before checking for empty.",
+    "Usage-range CSV export has no cost data (only the xlsx does). Acceptable, but worth noting for consistency.",
+    "server.py is ~1860 lines and should be split into routers (reports/xlsx, cycles/rates, site)"
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration27_rates_costs.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary only and all removed: synthetic meter_daily days 2026-10-15/19/20 (pytest teardown), one ended cycle in chamber 0 of kowalski-a for the history UI check, and test users. Rates left at kwh 0.85 / m3 6.5.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Server date 2026-10-22. kowalski-a has active cycles ch0 (2026-10-19, 500 pcs) and ch1 (2026-10-21, 400 pcs); meter_daily only has 10-21 and 10-22, so both chambers get half. The pytest file inserts synthetic days 10-19/10-20 (ch0 only) and checks that ch0 - ch1 = 50 kWh. CSRF: set the X-CSRF-Token header from the csrf cookie. UI: welcome-login-button -> login; superadmin must select device-select=kowalski-a before rates-card appears; cycle-history-toggle shows only ended cycles."
+}
