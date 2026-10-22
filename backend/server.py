@@ -1714,6 +1714,36 @@ async def cycles_compare(device_id: str, user: dict = Depends(require("viewer"))
     return {"chambers": await chamber_compare(device_id)}
 
 
+async def farm_compare() -> list:
+    out = []
+    async for c in db.clients.find({}).sort("name", 1):
+        cid = str(c["_id"])
+        devs = [k for k, d in DEVICES.items() if d["client_id"] == cid]
+        vs = []
+        for dv in devs:
+            ctx = await cycle_ctx(dv)
+            vs += [await cycle_view(x, ctx) for x in await db.cycles.find({"device_id": dv, "end": {"$ne": None}}).to_list(5000)]
+        r3 = lambda v, n=3: round(v, n) if v is not None else None
+        out.append({"client_id": cid, "name": c.get("display_name") or c["name"], "devices": len(devs), "cycles": len(vs),
+                    "cost_per_head": r3(avg([v["cost_per_head"] for v in vs])),
+                    "water_per_head_l": r3(avg([v["water_per_head_l"] for v in vs]), 2),
+                    "kwh_per_head": r3(avg([v["kwh_chamber"] / v["animals"] if v.get("animals") else None for v in vs]))})
+    return out
+
+
+@api.get("/farms/compare")
+async def farms_compare(user: dict = Depends(require("superadmin"))):
+    return {"farms": await farm_compare()}
+
+
+@api.get("/farms/compare/xlsx")
+async def farms_compare_xlsx(user: dict = Depends(require("superadmin"))):
+    rows = [["Ferma", "Sterowniki", "Zakończone rzuty", "Śr. koszt na sztukę zł", "Śr. woda na sztukę l", "Śr. prąd na sztukę kWh"]]
+    rows += [[f["name"], f["devices"], f["cycles"], f["cost_per_head"], f["water_per_head_l"], f["kwh_per_head"]] for f in await farm_compare()]
+    data = await asyncio.to_thread(xlsx_bytes, [("Porównanie ferm", rows, {"A": 28, "B": 11, "C": 17, "D": 22, "E": 20, "F": 22})], DEFAULT_REPORT_LOGO)
+    return file_response(data, f"porownanie_ferm_{local_day()}.xlsx", XLSX_MIME)
+
+
 @api.get("/devices/{device_id}/cycles/export")
 async def cycles_export(device_id: str, fmt: str = "xlsx", chamber: Optional[int] = None, user: dict = Depends(require("viewer"))):
     d = device_or_404(user, device_id)

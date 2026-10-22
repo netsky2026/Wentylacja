@@ -286,7 +286,7 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
           ch && <ChamberScreen key={`${devId}-${ch.id}`} ch={ch} t={t} send={send} canControl={canControl} dev={dev}
             canRename={["admin", "superadmin"].includes(user.role)} onRenamed={loadDevices} />
         ) : (
-          <DataView t={t} ch={ch} deviceId={devId} plant={state?.plant} history={history} plantHistory={plantHistory} events={events} dev={dev} />
+          <DataView t={t} ch={ch} deviceId={devId} plant={state?.plant} history={history} plantHistory={plantHistory} events={events} dev={dev} isSuper={user.role === "superadmin"} />
         )}
       </div>
       <BottomNav view={view} setView={setView} t={t} showOverview={(devices?.length || 0) > 1} />
