@@ -177,6 +177,7 @@ cd backend && pytest tests/ -q     # testy wymagają działającego backendu i d
 - **Raporty Excel** (`xlsx_bytes`): w nagłówku logo klienta (`client_logo`), a gdy klient go nie ma – logo Marco Polo (`backend/assets/marco-polo.png`). Zostawiane jest 5 wierszy na logo, nagłówek tabeli jest w wierszu 6.
 - **Branding**: link `/?klient=<slug>` (kod QR) zapamiętuje klienta i pokazuje jego ekran logowania w jego kolorze. Zwykły adres `/` zawsze pokazuje zieloną stronę główną Marco Polo.
 - **Motywy**: `frontend/src/index.css`, atrybut `data-theme` na `<html>`. Motyw użytkownika ma pierwszeństwo przed motywem klienta.
+- **PDF dla technika** (`techsheet.py`, reportlab + czcionki DejaVu w `backend/assets/fonts`): `GET /api/devices/{id}/techsheet.pdf` (superadmin, bez hasła).
 - **Logo** są zapisywane na dysku w `LOGO_DIR` (wolumen Docker `logos`).
 - Czas lokalny: `Europe/Warsaw` (`local_day()`).
 

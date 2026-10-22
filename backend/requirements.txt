@@ -58,6 +58,7 @@ jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 librt==0.16.0
 litellm @ https://customer-assets.emergentagent.com/internal-asset/library/litellm-1.80.0-py3-none-any.whl#sha256=adf398c513273de9341f61822296c6b2145f7f2dc4a69daf3ac04829f5bde3f8
+Markdown==3.11.2
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
 mccabe==0.7.0
@@ -102,6 +103,7 @@ pytokens==0.4.1
 PyYAML==6.0.3
 referencing==0.37.0
 regex==2026.9.29
+reportlab==5.1.0
 requests==2.34.2
 requests-oauthlib==2.0.0
 rich==15.0.0

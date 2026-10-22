@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload, QrCode, Activity } from "lucide-react";
+import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload, QrCode, Activity, FileText } from "lucide-react";
 import { MqttDebugPanel } from "@/components/MqttDebugPanel";
 import { API, formatApiError, siteLogoUrl } from "@/api";
 import { QrDialog } from "@/components/QrDialog";
@@ -169,6 +169,8 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
                   style={{ width: "auto", padding: "0 8px", fontSize: 10, color: d.simulated ? "var(--primary)" : "var(--muted)" }}>SIM</button>
                 <button className="sp-btn" onClick={() => setDebugDev(debugDev === d.device_id ? null : d.device_id)} data-testid={`device-mqtt-${d.device_id}`}
                   aria-label={t.mqttTitle} title={t.mqttTitle} style={{ color: debugDev === d.device_id ? "var(--primary)" : undefined }}><Activity size={13} /></button>
+                <a className="sp-btn" href={`${API}/devices/${d.device_id}/techsheet.pdf`} data-testid={`device-techsheet-${d.device_id}`}
+                  title={t.techSheet} aria-label={t.techSheet}><FileText size={13} /></a>
                 <button className="sp-btn" onClick={() => showCreds(d)} data-testid={`device-creds-${d.device_id}`} aria-label="credentials"><KeyRound size={13} /></button>
                 <button className="sp-btn" onClick={() => delDevice(d)} data-testid={`device-delete-${d.device_id}`} aria-label="delete"><Trash2 size={13} /></button>
               </div>

@@ -144,3 +144,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Sesje: sid w JWT, wylogowanie uniewaznia sesje (revoked_sessions TTL), POST /api/auth/logout-all (tv+1), odblokowanie kont (GET /api/users locked, POST /api/users/{id}/unlock).
 - Ping z potwierdzeniem ack (POST /api/devices/{id}/ping, przycisk w Podgladzie MQTT; symulator potwierdza), specyfikacja PLC zaktualizowana.
 - conn_monitor: zdarzenia offline/online, alarm po offline_min (alarm_settings, domyslnie 5) do odbiorcow klienta + ADMIN_EMAIL, wiadomosc o przywroceniu.
+- PDF dla technika per sterownik (GET /api/devices/{id}/techsheet.pdf, superadmin, bez hasla; przycisk w FleetCard), reportlab + DejaVu.

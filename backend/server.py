@@ -38,6 +38,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import auth  # noqa: E402
 import notify  # noqa: E402
+import techsheet  # noqa: E402
 from auth import require  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -1296,6 +1297,27 @@ async def create_device(body: DeviceIn, user: dict = Depends(require("superadmin
     return {**device_view(body.device_id, user), "mqtt_username": body.device_id, "mqtt_password": password}
 
 
+def plc_broker() -> dict:
+    if os.environ.get("PLC_BROKER_HOST"):
+        return {"host": os.environ["PLC_BROKER_HOST"], "port": int(os.environ["PLC_BROKER_PORT"]), "tls": True}
+    return {"host": MQTT_HOST, "port": MQTT_PORT, "tls": MQTT_TLS}
+
+
+@api.get("/devices/{device_id}/techsheet.pdf")
+async def device_techsheet(device_id: str, user: dict = Depends(require("superadmin"))):
+    d = await db.devices.find_one({"device_id": device_id})
+    if not d or device_id not in DEVICES:
+        raise HTTPException(404, "Device not found")
+    reg = DEVICES[device_id]
+    names = [ch_name(device_id, i) for i in range(reg["chambers"])]
+    gen = datetime.now(PL_TZ).strftime("%Y-%m-%d %H:%M")
+    pdf = await asyncio.to_thread(techsheet.build, {"device_id": device_id, "name": reg["name"], "client_name": reg["client_name"],
+                                                    "chambers": reg["chambers"]}, names, plc_broker(),
+                                  d.get("mqtt_username", device_id), (state_topic(device_id), command_topic(device_id)), FRONTEND_URL, gen)
+    await log_event("info", f"{dev_label(device_id)}: pobrano PDF z danymi sterownika dla technika", {"user": user["email"]}, device_id)
+    return file_response(pdf, f"sterownik_{device_id}_dla_technika.pdf", "application/pdf")
+
+
 @api.get("/devices/{device_id}/credentials")
 async def device_credentials(device_id: str, user: dict = Depends(require("superadmin"))):
     d = await db.devices.find_one({"device_id": device_id})
@@ -1303,8 +1325,7 @@ async def device_credentials(device_id: str, user: dict = Depends(require("super
         raise HTTPException(404, "Device not found")
     return {"mqtt_username": d.get("mqtt_username", device_id), "mqtt_password": decrypt_secret(d.get("mqtt_password_enc", "")),
             "state_topic": state_topic(device_id), "command_topic": command_topic(device_id),
-            **({"broker_host": os.environ["PLC_BROKER_HOST"], "broker_port": int(os.environ["PLC_BROKER_PORT"]), "tls": True}
-               if os.environ.get("PLC_BROKER_HOST") else {"broker_host": MQTT_HOST, "broker_port": MQTT_PORT, "tls": MQTT_TLS})}
+            **{f"broker_{k}" if k != "tls" else k: v for k, v in plc_broker().items()}}
 
 
 @api.patch("/devices/{device_id}")
