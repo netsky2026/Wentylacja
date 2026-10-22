@@ -103,7 +103,7 @@ export const I18N = {
     clientHasDevices: "Najpierw usuń sterowniki tego klienta",
     copy: "Kopiuj",
     copied: "Skopiowano",
-    credsHint: "Te dane wpisz w bramce MQTT sterownika i dodaj konto z dostępem do tych tematów w swoim brokerze.",
+    credsHint: "Te dane przekaż technikowi PLC – wpisuje je w ustawieniach MQTT sterownika (TLS, port 8883).",
     alarmRecipients: "Odbiorcy alarmów",
     alarmMocked: "Nieskonfigurowany kanał: {c}. Uzupełnij klucze w pliku .env serwera – do tego czasu te powiadomienia są tylko zapisywane.",
     notif_sent: "wysłano", notif_failed: "błąd", notif_not_configured: "brak kanału", notif_mocked: "test",

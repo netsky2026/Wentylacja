@@ -1303,7 +1303,8 @@ async def device_credentials(device_id: str, user: dict = Depends(require("super
         raise HTTPException(404, "Device not found")
     return {"mqtt_username": d.get("mqtt_username", device_id), "mqtt_password": decrypt_secret(d.get("mqtt_password_enc", "")),
             "state_topic": state_topic(device_id), "command_topic": command_topic(device_id),
-            "broker_host": MQTT_HOST, "broker_port": MQTT_PORT, "tls": MQTT_TLS}
+            **({"broker_host": os.environ["PLC_BROKER_HOST"], "broker_port": int(os.environ["PLC_BROKER_PORT"]), "tls": True}
+               if os.environ.get("PLC_BROKER_HOST") else {"broker_host": MQTT_HOST, "broker_port": MQTT_PORT, "tls": MQTT_TLS})}
 
 
 @api.patch("/devices/{device_id}")

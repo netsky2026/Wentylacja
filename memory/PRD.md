@@ -139,7 +139,7 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Porownanie komor (GET /api/devices/{id}/cycles/compare; karta ChamberCompareCard w zakladce Dane; arkusz "Porownanie komor" w Excelu chowow): sredni koszt/szt. z zakonczonych rzutow, najlepsza komora wyrozniona.
 - Porownanie ferm dla superadmina (GET /api/farms/compare, /xlsx; FarmCompareCard w Dane): koszt/woda/prad na sztuke.
 - Poprawki z audytu bezpieczenstwa: neutralizacja formul w CSV/XLSX (csv_cell, data_type s), CR/LF w imieniu formularza kontaktowego.
-- Specyfikacja PLC: deploy/SPECYFIKACJA_PLC.md + PDF (frontend/public/specyfikacja-plc.pdf).
+- Instrukcja dla technika PLC: deploy/INSTRUKCJA_TECHNIK_PLC.md + PDF (/instrukcja-plc.pdf, stary link /specyfikacja-plc.pdf = ta sama tresc). Dane dostepowe sterownika pokazuja publiczny broker (PLC_BROKER_HOST/PORT w docker-compose).
 - Podglad MQTT (superadmin, GET /api/devices/{id}/mqtt-debug, MqttDebugPanel w FleetCard): ostatnia surowa wiadomosc + powod odrzucenia (state_error) + ostatnie polecenie (w pamieci).
 - Sesje: sid w JWT, wylogowanie uniewaznia sesje (revoked_sessions TTL), POST /api/auth/logout-all (tv+1), odblokowanie kont (GET /api/users locked, POST /api/users/{id}/unlock).
 - Ping z potwierdzeniem ack (POST /api/devices/{id}/ping, przycisk w Podgladzie MQTT; symulator potwierdza), specyfikacja PLC zaktualizowana.

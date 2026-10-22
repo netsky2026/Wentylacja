@@ -34,6 +34,8 @@ services:
       MQTT_HOST: mosquitto
       MQTT_PORT: "1883"
       MQTT_DYNSEC: "1"
+      PLC_BROKER_HOST: ${DOMAIN}
+      PLC_BROKER_PORT: "8883"
       LOGO_DIR: /data/logos
       FRONTEND_URL: https://${DOMAIN}
     volumes:
