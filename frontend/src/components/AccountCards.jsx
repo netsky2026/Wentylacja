@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { LogOut, Trash2, UserPlus } from "lucide-react";
+import { LogOut, Trash2, UserPlus, Unlock } from "lucide-react";
 import { API, formatApiError } from "@/api";
 
 const ROLE_KEYS = { viewer: "roleViewer", operator: "roleOperator", admin: "roleAdmin", superadmin: "roleSuperadmin" };
@@ -22,6 +22,10 @@ export const AccountCard = ({ t, user, onLogout, onUserChange, clientTheme }) =>
   };
   const [cur, setCur] = useState("");
   const [nw, setNw] = useState("");
+  const logoutAll = async () => {
+    if (!window.confirm(t.logoutAllConfirm)) return;
+    try { await axios.post(`${API}/auth/logout-all`); onLogout(); } catch (e) { toast.error(t.saveFailed); }
+  };
   const change = async () => {
     if (nw.length < 8) { toast.error(t.passwordShort); return; }
     try {
@@ -54,6 +58,10 @@ export const AccountCard = ({ t, user, onLogout, onUserChange, clientTheme }) =>
       <button className="action-btn" data-testid="pw-change" onClick={change} style={{ width: "100%", padding: 9, marginTop: 8, fontSize: 13 }}>
         {t.changePassword}
       </button>
+      <button className="action-btn" data-testid="logout-all-btn" onClick={logoutAll}
+        style={{ width: "100%", padding: 9, marginTop: 8, fontSize: 12, color: "var(--accent)", borderColor: "var(--accent)" }}>
+        <LogOut size={13} /> {t.logoutAll}
+      </button>
     </div>
   );
 };
@@ -78,6 +86,9 @@ export const UsersCard = ({ t, me, clientId, clientName }) => {
     if (!window.confirm(`${t.confirmDelete} ${email}?`)) return;
     try { await axios.delete(`${API}/users/${id}`); load(); } catch (e) { toast.error(t.saveFailed); }
   };
+  const unlock = async (u) => {
+    try { await axios.post(`${API}/users/${u.id}/unlock`); toast.success(t.unlocked); load(); } catch (e) { toast.error(t.saveFailed); }
+  };
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
     <div className="panel panel-pad" data-testid="users-card">
@@ -87,8 +98,13 @@ export const UsersCard = ({ t, me, clientId, clientName }) => {
           <div key={u.id} className="flex items-center justify-between reg-cell" style={{ padding: "8px 10px" }} data-testid={`user-row-${u.email}`}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</div>
-              <div style={{ fontSize: 10, color: "var(--muted)" }}>{t[ROLE_KEYS[u.role]]}</div>
+              <div style={{ fontSize: 10, color: "var(--muted)" }}>{t[ROLE_KEYS[u.role]]}
+                {u.locked && <span style={{ color: "var(--accent)", fontWeight: 700 }} data-testid={`user-locked-${u.email}`}> · {t.userLocked}</span>}</div>
             </div>
+            {u.locked && (
+              <button className="action-btn" data-testid={`user-unlock-${u.email}`} onClick={() => unlock(u)}
+                style={{ padding: "5px 10px", fontSize: 11, marginLeft: "auto", marginRight: 6 }}><Unlock size={12} /> {t.unlock}</button>
+            )}
             {u.id !== me.id && (
               <button className="sp-btn" data-testid={`user-delete-${u.email}`} onClick={() => del(u.id, u.email)} aria-label="delete"><Trash2 size={14} /></button>
             )}

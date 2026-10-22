@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload, QrCode } from "lucide-react";
+import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload, QrCode, Activity } from "lucide-react";
+import { MqttDebugPanel } from "@/components/MqttDebugPanel";
 import { API, formatApiError, siteLogoUrl } from "@/api";
 import { QrDialog } from "@/components/QrDialog";
 import { ThemeSelect } from "@/components/AccountCards";
@@ -97,6 +98,7 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
   const [clientName, setClientName] = useState("");
   const [f, setF] = useState({ client_id: "", name: "", device_id: "", chambers: 3, simulated: false });
   const [creds, setCreds] = useState(null);
+  const [debugDev, setDebugDev] = useState(null);
   const [brandOpen, setBrandOpen] = useState(null);
   const [qrClient, setQrClient] = useState(null);
   const load = useCallback(async () => {
@@ -154,8 +156,8 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
             </div>
           </div>
           {brandOpen === c.id && <BrandEditor c={c} t={t} onChanged={refresh} site={site} />}
-          {devices.filter((d) => d.client_id === c.id).map((d) => (
-            <div key={d.device_id} className="flex items-center justify-between" style={{ padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 6 }}
+          {devices.filter((d) => d.client_id === c.id).map((d) => (<div key={d.device_id}>
+            <div className="flex items-center justify-between" style={{ padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 6 }}
               data-testid={`fleet-device-${d.device_id}`}>
               <div style={{ minWidth: 0 }}>
                 <div className="flex items-center gap-1" style={{ fontSize: 12 }}><Cpu size={12} /> {d.name}
@@ -165,11 +167,14 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
               <div className="flex gap-1">
                 <button className="sp-btn" title={t.simulator} onClick={() => toggleSim(d)} data-testid={`device-sim-${d.device_id}`}
                   style={{ width: "auto", padding: "0 8px", fontSize: 10, color: d.simulated ? "var(--primary)" : "var(--muted)" }}>SIM</button>
+                <button className="sp-btn" onClick={() => setDebugDev(debugDev === d.device_id ? null : d.device_id)} data-testid={`device-mqtt-${d.device_id}`}
+                  aria-label={t.mqttTitle} title={t.mqttTitle} style={{ color: debugDev === d.device_id ? "var(--primary)" : undefined }}><Activity size={13} /></button>
                 <button className="sp-btn" onClick={() => showCreds(d)} data-testid={`device-creds-${d.device_id}`} aria-label="credentials"><KeyRound size={13} /></button>
                 <button className="sp-btn" onClick={() => delDevice(d)} data-testid={`device-delete-${d.device_id}`} aria-label="delete"><Trash2 size={13} /></button>
               </div>
             </div>
-          ))}
+            {debugDev === d.device_id && <MqttDebugPanel t={t} deviceId={d.device_id} onClose={() => setDebugDev(null)} />}
+          </div>))}
         </div>
       ))}
       {creds && <Creds c={creds} t={t} onClose={() => setCreds(null)} />}

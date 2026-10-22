@@ -338,6 +338,25 @@ def sanitize_state(p, device_id: str) -> Optional[dict]:
             "plant": {k: float(plant_in[k]) for k in PLANT_FIELDS if _num(plant_in.get(k))}, "ts": now_iso()}
 
 
+def state_error(p, device_id: str) -> str:
+    """Human-readable reason why sanitize_state rejected a message (MQTT preview)."""
+    n = DEVICES[device_id]["chambers"]
+    if not isinstance(p, dict):
+        return "Wiadomość musi być obiektem JSON { ... }"
+    if not isinstance(p.get("chambers"), list):
+        return "Brak listy \"chambers\""
+    if len(p["chambers"]) != n:
+        return f"Zła liczba komór: przysłano {len(p['chambers'])}, sterownik ma {n}"
+    ids = [c.get("id") if isinstance(c, dict) else None for c in p["chambers"]]
+    if not all(_num(i) for i in ids) or sorted(int(i) for i in ids) != list(range(n)):
+        return f"Pola \"id\" komór muszą być liczbami 0–{n - 1} (przysłano {ids})"
+    for ch in p["chambers"]:
+        bad = [k for k in NUM_FIELDS if not _num(ch.get(k))]
+        if bad:
+            return f"Komora id={ch['id']}: brak lub nieprawidłowa wartość pól: {', '.join(bad)} (muszą być liczbami)"
+    return "Nieprawidłowy format wiadomości"
+
+
 def annotate(device_id: str, payload: dict) -> dict:
     for ch in payload["chambers"]:
         th = th_for(device_id, ch["id"])
@@ -371,6 +390,8 @@ class Gateway:
         self.ws_clients: dict = {}  # ws -> user
         self.states: dict = {}
         self.last_seen: dict = {}
+        self.raw: dict = {}
+        self.last_cmd: dict = {}
         self.connected = False
         self.mc: Optional[mqtt.Client] = None
 
@@ -405,12 +426,19 @@ class Gateway:
         device_id = parts[-2]
         if device_id not in DEVICES:
             return
+        raw = msg.payload[:8192].decode("utf-8", "replace")
+        rec = {"topic": msg.topic, "ts": now_iso(), "size": len(msg.payload), "payload": raw, "ok": False, "error": None}
+        self.raw[device_id] = rec
         try:
-            payload = sanitize_state(json.loads(msg.payload.decode()), device_id)
+            data = json.loads(msg.payload.decode())
         except Exception:
+            rec["error"] = "To nie jest poprawny JSON (UTF-8)"
             return
+        payload = sanitize_state(data, device_id)
         if payload is None:
+            rec["error"] = state_error(data, device_id)
             return
+        rec["ok"] = True
         prev = self.states.get(device_id)
         annotate(device_id, payload)
         self.states[device_id] = payload
@@ -435,7 +463,9 @@ class Gateway:
             coro.close()
 
     def publish_command(self, device_id: str, cmd: dict) -> bool:
-        return self.mc.publish(command_topic(device_id), json.dumps(cmd), qos=1).rc == mqtt.MQTT_ERR_SUCCESS
+        ok = self.mc.publish(command_topic(device_id), json.dumps(cmd), qos=1).rc == mqtt.MQTT_ERR_SUCCESS
+        self.last_cmd[device_id] = {"topic": command_topic(device_id), "ts": now_iso(), "payload": json.dumps(cmd, ensure_ascii=False), "ok": ok}
+        return ok
 
     def is_online(self, device_id: str) -> bool:
         t = self.last_seen.get(device_id)
@@ -631,7 +661,8 @@ async def ws_revalidator():
         await asyncio.sleep(30)
         for ws, u in list(gateway.ws_clients.items()):
             cur = await db.users.find_one({"_id": u["_id"]})
-            if not cur or any(cur.get(k) != u.get(k) for k in ("role", "client_id", "tv")):
+            if (not cur or any(cur.get(k) != u.get(k) for k in ("role", "client_id", "tv"))
+                    or await auth.session_revoked(u.get("_sid"))):
                 gateway.ws_clients.pop(ws, None)
                 try:
                     await ws.close(code=4401)
@@ -1747,6 +1778,14 @@ async def farm_compare() -> list:
                     "water_per_head_l": r3(avg([v["water_per_head_l"] for v in vs]), 2),
                     "kwh_per_head": r3(avg([v["kwh_chamber"] / v["animals"] if v.get("animals") else None for v in vs]))})
     return out
+
+
+@api.get("/devices/{device_id}/mqtt-debug")
+async def mqtt_debug(device_id: str, user: dict = Depends(require("superadmin"))):
+    device_or_404(user, device_id)
+    return {"online": gateway.is_online(device_id), "broker_connected": gateway.connected,
+            "state_topic": state_topic(device_id), "command_topic": command_topic(device_id),
+            "last_message": gateway.raw.get(device_id), "last_command": gateway.last_cmd.get(device_id)}
 
 
 @api.get("/farms/compare")

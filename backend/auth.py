@@ -1,4 +1,5 @@
 import os
+import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -35,15 +36,26 @@ def _secret() -> str:
     return os.environ["JWT_SECRET"]
 
 
-def _token(u: dict, kind: str, delta: timedelta) -> str:
-    return jwt.encode({"sub": str(u["_id"]), "tv": u.get("tv", 0), "type": kind,
+def _token(u: dict, kind: str, delta: timedelta, sid: str) -> str:
+    return jwt.encode({"sub": str(u["_id"]), "tv": u.get("tv", 0), "type": kind, "sid": sid,
                        "exp": datetime.now(timezone.utc) + delta}, _secret(), JWT_ALGORITHM)
 
 
-def _set_cookies(resp: Response, u: dict):
+def _set_cookies(resp: Response, u: dict, sid: Optional[str] = None):
+    """sid identifies one browser session (kept on refresh, revoked on logout)."""
+    sid = sid or secrets.token_urlsafe(16)
     opts = dict(httponly=True, secure=True, samesite="lax", path="/")
-    resp.set_cookie("access_token", _token(u, "access", timedelta(minutes=ACCESS_MIN)), max_age=ACCESS_MIN * 60, **opts)
-    resp.set_cookie("refresh_token", _token(u, "refresh", timedelta(days=REFRESH_DAYS)), max_age=REFRESH_DAYS * 86400, **opts)
+    resp.set_cookie("access_token", _token(u, "access", timedelta(minutes=ACCESS_MIN), sid), max_age=ACCESS_MIN * 60, **opts)
+    resp.set_cookie("refresh_token", _token(u, "refresh", timedelta(days=REFRESH_DAYS), sid), max_age=REFRESH_DAYS * 86400, **opts)
+
+
+def _clear_cookies(resp: Response):
+    for k in ("access_token", "refresh_token"):
+        resp.delete_cookie(k, path="/", secure=True, httponly=True, samesite="lax")
+
+
+async def session_revoked(sid: Optional[str]) -> bool:
+    return bool(sid) and await db.revoked_sessions.find_one({"_id": sid}) is not None
 
 
 def public_user(u: dict) -> dict:
@@ -61,8 +73,9 @@ async def user_from_token(token: Optional[str], kind: str = "access") -> Optiona
     if p.get("type") != kind or not ObjectId.is_valid(p.get("sub", "")):
         return None
     u = await db.users.find_one({"_id": ObjectId(p["sub"])})
-    if not u or u.get("tv", 0) != p.get("tv", 0):
+    if not u or u.get("tv", 0) != p.get("tv", 0) or await session_revoked(p.get("sid")):
         return None
+    u["_sid"] = p.get("sid")
     return u
 
 
@@ -127,9 +140,24 @@ async def login(body: LoginIn, response: Response):
 
 
 @router.post("/auth/logout")
-async def logout(response: Response):
-    for k in ("access_token", "refresh_token"):
-        response.delete_cookie(k, path="/", secure=True, httponly=True, samesite="lax")
+async def logout(request: Request, response: Response):
+    for k in ("refresh_token", "access_token"):
+        try:
+            sid = jwt.decode(request.cookies.get(k) or "", _secret(), algorithms=[JWT_ALGORITHM]).get("sid")
+        except jwt.InvalidTokenError:
+            continue
+        if sid:
+            await db.revoked_sessions.update_one(
+                {"_id": sid}, {"$set": {"exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_DAYS)}}, upsert=True)
+            break
+    _clear_cookies(response)
+    return {"ok": True}
+
+
+@router.post("/auth/logout-all")
+async def logout_all(response: Response, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"_id": user["_id"]}, {"$inc": {"tv": 1}})
+    _clear_cookies(response)
     return {"ok": True}
 
 
@@ -138,7 +166,7 @@ async def refresh(request: Request, response: Response):
     u = await user_from_token(request.cookies.get("refresh_token"), "refresh")
     if not u:
         raise HTTPException(401, "Not authenticated")
-    _set_cookies(response, u)
+    _set_cookies(response, u, u["_sid"])
     return public_user(u)
 
 
@@ -180,7 +208,19 @@ async def list_users(client_id: Optional[str] = None, actor: dict = Depends(requ
     q = _user_scope(actor)
     if actor["role"] == "superadmin" and client_id:
         q = {"client_id": client_id}
-    return {"users": [public_user(u) async for u in db.users.find(q).sort("email", 1)]}
+    now = datetime.now(timezone.utc)
+    locked = {a["identifier"] async for a in db.login_attempts.find({"count": {"$gte": MAX_ATTEMPTS}})
+              if a["last"].replace(tzinfo=timezone.utc) > now - timedelta(minutes=LOCK_MIN)}
+    return {"users": [{**public_user(u), "locked": u["email"] in locked} async for u in db.users.find(q).sort("email", 1)]}
+
+
+@router.post("/users/{user_id}/unlock")
+async def unlock_user(user_id: str, actor: dict = Depends(require("admin"))):
+    target = await db.users.find_one({"_id": ObjectId(user_id), **_user_scope(actor)}) if ObjectId.is_valid(user_id) else None
+    if not target or (target["role"] == "superadmin" and actor["role"] != "superadmin"):
+        raise HTTPException(404, "User not found")
+    await db.login_attempts.delete_one({"identifier": target["email"]})
+    return {"ok": True}
 
 
 @router.post("/users")
@@ -221,6 +261,7 @@ async def setup():
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
     await db.login_attempts.create_index("last", expireAfterSeconds=LOCK_MIN * 60)
+    await db.revoked_sessions.create_index("exp", expireAfterSeconds=0)
     email = os.environ["ADMIN_EMAIL"].strip().lower()
     pw = os.environ["ADMIN_PASSWORD"]
     u = await db.users.find_one({"email": email})
