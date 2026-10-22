@@ -24,10 +24,10 @@ export const CycleCostChart = ({ t, rows }) => {
         <ResponsiveContainer>
           <BarChart data={data} margin={{ top: 16, right: 4, left: 0, bottom: 0 }}>
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => String(+v.toFixed(3)).replace(".", ",")} />
+            <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => String(+v.toFixed(4)).replace(".", ",")} />
             <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", fontSize: 12 }}
               formatter={(v, _n, p) => [`${fmt(v)} zł${p.payload.running ? ` (${t.costChartRunning})` : ""}`, t.costPerHead]} />
-            <Bar dataKey="v" radius={[4, 4, 0, 0]} label={(p) => <TopLabel key={p.index} {...p} />}>
+            <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false} label={(p) => <TopLabel key={p.index} {...p} />}>
               {data.map((d) => (
                 <Cell key={d.id} fill={best && d.id === best.id ? "var(--green)" : "var(--primary)"} fillOpacity={d.running ? 0.4 : 1} />
               ))}

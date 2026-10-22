@@ -1,0 +1,35 @@
+{
+  "summary": "Tested the superadmin 'Porównanie ferm' feature (backend + UI on mobile 390px and desktop 1920px) and the security fixes (formula injection in CSV/XLSX exports, CR/LF in the contact form name). Backend: 12/12 new tests pass and the iteration 29 regression passes 7/7. /farms/compare returns every client and counts only finished cycles. Its averages match the values recomputed from /devices/{id}/cycles?chamber=N, including kwh_per_head = avg(kwh_chamber/animals). Kowalski seeded values were exact: 5 cycles, 0.128 zł/head, 7.5 l/head, 0.094 kWh/head. RBAC: client admin gets 403 and anonymous gets 401 on both endpoints. The XLSX has sheet 'Porównanie ferm' with the logo image in rows 1-5 and a bold header in row 6. Chamber names '=1+1', '+SUM(A1)', '-2+3' and '@cmd' come out as \"'=1+1\" etc. in the cycles CSV (all chambers and the ?chamber filter). In the cycles XLSX (sheets 'Chowy' and 'Porównanie komór') they are stored as data_type 's', and the sheet XML contains no <f> formula elements. The history XLSX sheet title '=1+1' works. The history CSV has numbers only and works. Usage range CSV/XLSX still download, and the CSV header shows woda_=1+1_m3, which is safe because of the woda_ prefix. CSV regression is unchanged: comma decimals (10,0 / 3,0), dates, 'trwa' for the active cycle. Contact form with name 'Jan\\r\\nBcc: x@y.pl' returns 503 (SMTP not configured), not 500. The event log message is collapsed to 'Jan Bcc: x@y.pl' with no CR/LF. Validation 422s are unchanged. UI as superadmin: the card shows in the Dane tab and all 3 metric buttons switch the chart, best-farm line and green highlight. When no farm has a value (cost_per_head before seeding: Marco Polo has no rates, Kowalski had no finished cycles) it shows the empty state farm-compare-empty. Table rows farm-compare-row-<client_id> show correct values. The farm-compare-xlsx link downloads porownanie_ferm_<date>.xlsx. There is no horizontal overflow at 390px. As client admin (kowalski.admin) the card is not rendered. Test data was cleaned up: test cycles, meter_daily rows tagged it30, chamber names and contact_requests. Kowalski rates 0.85 / 6.5 are untouched.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/public/contact", "issue": "A whitespace-only name such as ' \\r\\n ' passes min_length=2, because the length check runs before the whitespace collapse. The name becomes '' and the form is still processed: reached the send step and got 503 'send failed'. That means an e-mail with an empty name and subject 'Zapytanie ze strony – ' would be sent once SMTP is configured. Suggest returning 422 when the collapsed name has fewer than 2 characters."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FarmCompareCard bar value labels", "issue": "The value labels above the bars (TopLabel) were missing on the first render (default cost metric) even about 5s after load. They appear only after switching the metric and waiting for the animation, which is about 1.5s in recharts 3. Shortly after a switch (800ms) no labels were present. Suggest isAnimationActive={false} on <Bar> or using <LabelList>. ChamberCompareCard and CycleCostChart use the same pattern and are likely affected too (not separately verified).", "selector": "[data-testid=farm-compare-card] svg text", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dane > Porównanie ferm (mobile 390px)", "issues": ["Y-axis tick labels can repeat because of rounding: with a max of 0.003 the ticks show '0,002' twice. Suggest allowDecimals tuning or more decimals for small ranges.", "Table headers 'Koszt zł', 'Woda l' and 'Prąd kWh' wrap onto two lines on mobile. This is acceptable but could use shorter headers or whiteSpace: nowrap.", "When one farm's value is much larger (7.5 vs 0.23 l) the smaller bar is a thin line. This is acceptable because the table shows the exact value."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration30_farm_compare_security.py", "/app/test_reports/pytest/pytest_it30.xml"],
+  "action_items": [
+    "(Low) In public_contact, reject with 422 when the collapsed name has fewer than 2 characters.",
+    "(Low) Make the recharts bar value labels render reliably on first mount (isAnimationActive={false} or LabelList) in FarmCompareCard, and likely in ChamberCompareCard and CycleCostChart."
+  ],
+  "critical_code_review_comments": [
+    "farm_compare is N+1: for each client and device it runs cycle_ctx plus a cycle_view per finished cycle, each of which calls usage_between. This is fine for 2 clients but will be slow with many farms or cycles. Consider caching or aggregating.",
+    "csv_cell treats strings starting with '-' as formulas, but numeric values pass through _num first, so negative numbers stay numeric. Verified correct.",
+    "usage_range_csv uses csv_cell(...).lstrip(\"'\") for the header names. This is safe only because of the 'woda_' prefix; a comment would help prevent a future regression."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration30_farm_compare_security.py"],
+  "success_rate": {"backend": "100% (12/12 new + 7/7 iteration29 regression)", "frontend": "~95% (all flows work; minor label rendering issue)"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026; client admin kowalski.admin@kowalski.pl / KowalskiAdm!2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "The test fixture seeds meter_daily rows tagged 'it30' and 6 cycles in kowalski-a chambers 2-5, and renames those chambers to formula strings. Everything is cleaned up in teardown unless KEEP_SEED=1; with KEEP_SEED=1 the cycle ids are written to /tmp/it30_cycles.txt. All seed data was removed after testing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run tests with: cd /app/backend && REACT_APP_BACKEND_URL=... python -m pytest tests/test_iteration30_farm_compare_security.py -n 0. The pytest.ini adds -n/xdist, so -p no:xdist breaks it; use -n 0. The landing page needs welcome-login-button to be clicked before the login form appears. Kowalski chambers 2-5 must be empty for the fixture. The contact rate limit is 3 per IP per hour; the tests clear contact_requests."
+}

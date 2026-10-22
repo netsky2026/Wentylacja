@@ -1123,6 +1123,8 @@ async def public_contact(body: ContactIn, request: Request):
     if body.company:
         return {"ok": True}
     body.name = " ".join(body.name.split())
+    if len(body.name) < 2:
+        raise HTTPException(422, "name too short")
     if not body.phone.strip() and not body.email.strip():
         raise HTTPException(422, "phone or email required")
     site = await db.site_settings.find_one({"_id": "main"}) or {}

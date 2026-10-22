@@ -37,8 +37,8 @@ export const FarmCompareCard = ({ t }) => {
           <ResponsiveContainer>
             <BarChart data={data} margin={{ top: 16, right: 4, left: 0, bottom: 0 }}>
               <XAxis dataKey="name" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} interval={0} />
-              <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => fmt(v, dec)} />
-              <Bar dataKey={key} radius={[4, 4, 0, 0]} label={(p) => <TopLabel key={p.index} {...p} d={dec} />}>
+              <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => fmt(v, 4)} />
+              <Bar dataKey={key} radius={[4, 4, 0, 0]} isAnimationActive={false} label={(p) => <TopLabel key={p.index} {...p} d={dec} />}>
                 {data.map((r) => <Cell key={r.client_id} fill={r.client_id === best.client_id ? "var(--green)" : "var(--primary)"} />)}
               </Bar>
             </BarChart>
@@ -49,7 +49,7 @@ export const FarmCompareCard = ({ t }) => {
         <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }} data-testid="farm-compare-table">
           <thead><tr style={{ color: "var(--muted)", textAlign: "left" }}>
             <th style={{ padding: "4px 6px 4px 0" }}>{t.farmName}</th><th>{t.compareCycles}</th>
-            {METRICS.map(([k, label]) => <th key={k} style={{ paddingRight: 6 }}>{t[label]}</th>)}
+            {METRICS.map(([k, label]) => <th key={k} style={{ paddingRight: 6, whiteSpace: "nowrap" }}>{t[label]}</th>)}
           </tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.client_id} style={{ borderTop: "1px solid var(--border)", color: best && r.client_id === best.client_id ? "var(--green)" : undefined }}

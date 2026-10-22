@@ -31,8 +31,8 @@ export const ChamberCompareCard = ({ t, dev }) => {
           <ResponsiveContainer>
             <BarChart data={data} margin={{ top: 16, right: 4, left: 0, bottom: 0 }}>
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} interval={0} />
-              <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => fmt(v)} />
-              <Bar dataKey="cost_per_head" radius={[4, 4, 0, 0]} label={(p) => <TopLabel key={p.index} {...p} />}>
+              <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => fmt(v, 4)} />
+              <Bar dataKey="cost_per_head" radius={[4, 4, 0, 0]} isAnimationActive={false} label={(p) => <TopLabel key={p.index} {...p} />}>
                 {data.map((d) => <Cell key={d.chamber} fill={d.chamber === best.chamber ? "var(--green)" : "var(--primary)"} />)}
               </Bar>
             </BarChart>

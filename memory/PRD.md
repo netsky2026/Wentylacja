@@ -137,3 +137,6 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Admin klienta edytuje dane kontaktowe (GET/PUT /api/client-contact, karta ClientContactCard; superadmin – ta sama karta po wybraniu sterownika klienta; usunieto duplikat z FleetCard).
 - Wykres kosztu na sztuke kolejnych rzutow (CycleCostChart w historii chowow), najtanszy zakonczony wyrozniony, trwajacy jasniejszy.
 - Porownanie komor (GET /api/devices/{id}/cycles/compare; karta ChamberCompareCard w zakladce Dane; arkusz "Porownanie komor" w Excelu chowow): sredni koszt/szt. z zakonczonych rzutow, najlepsza komora wyrozniona.
+- Porownanie ferm dla superadmina (GET /api/farms/compare, /xlsx; FarmCompareCard w Dane): koszt/woda/prad na sztuke.
+- Poprawki z audytu bezpieczenstwa: neutralizacja formul w CSV/XLSX (csv_cell, data_type s), CR/LF w imieniu formularza kontaktowego.
+- Specyfikacja PLC: deploy/SPECYFIKACJA_PLC.md + PDF (frontend/public/specyfikacja-plc.pdf).
