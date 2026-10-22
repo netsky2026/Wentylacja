@@ -1122,6 +1122,7 @@ class ContactIn(BaseModel):
 async def public_contact(body: ContactIn, request: Request):
     if body.company:
         return {"ok": True}
+    body.name = " ".join(body.name.split())
     if not body.phone.strip() and not body.email.strip():
         raise HTTPException(422, "phone or email required")
     site = await db.site_settings.find_one({"_id": "main"}) or {}
@@ -1427,6 +1428,18 @@ async def client_logo(client_id: Optional[str]) -> bytes:
     return DEFAULT_REPORT_LOGO
 
 
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_cell(v) -> str:
+    if v is None:
+        return ""
+    if _num(v):
+        return str(v).replace(".", ",")
+    v = str(v)
+    return ("'" + v if v[:1] in FORMULA_START else v).replace(";", " ").replace("\n", " ").replace("\r", " ")
+
+
 def xlsx_bytes(sheets: list, logo: Optional[bytes] = None) -> bytes:
     """sheets: [(title, rows, col_widths)] – first data row of each sheet is bold header; logo goes above it."""
     from openpyxl import Workbook
@@ -1443,6 +1456,9 @@ def xlsx_bytes(sheets: list, logo: Optional[bytes] = None) -> bytes:
             ws.add_image(XlImage(io.BytesIO(png)), "A1")
         for r in rows:
             ws.append(r)
+            for c in ws[ws.max_row]:
+                if isinstance(c.value, str) and c.value[:1] in FORMULA_START:
+                    c.data_type = "s"
         for c in ws[LOGO_ROWS + 1 if png else 1] if rows else []:
             c.font = Font(bold=True)
         for col, w in widths.items():
@@ -1490,7 +1506,7 @@ async def usage_range_csv(device_id: str, start: str, end: str, user: dict = Dep
     d = device_or_404(user, device_id)
     a, b = range_or_422(start, end)
     u = await usage_between(device_id, a, b)
-    names = [ch_name(device_id, i).replace(";", " ") for i in range(d["chambers"])]
+    names = [csv_cell(ch_name(device_id, i)).lstrip("'") for i in range(d["chambers"])]
     lines = [";".join(["dzien", "prad_kWh"] + [f"woda_{nm}_m3" for nm in names])]
     lines += [";".join([r["day"], str(r["kwh"]).replace(".", ",")] + [str(round(w / 1000, 3)).replace(".", ",") for w in r["water_l"]])
               for r in u["days"]]
@@ -1750,8 +1766,7 @@ async def cycles_export(device_id: str, fmt: str = "xlsx", chamber: Optional[int
     rows = await cycle_rows(device_id, chamber)
     fname = f"chowy_{device_id}{'' if chamber is None else f'_komora{chamber + 1}'}_{local_day()}"
     if fmt == "csv":
-        txt = "\n".join(";".join("" if x is None else str(x).replace(";", " ").replace(".", ",") if isinstance(x, float) else str(x).replace(";", " ")
-                                  for x in r) for r in [CYCLE_HEAD] + rows)
+        txt = "\n".join(";".join(csv_cell(x) for x in r) for r in [CYCLE_HEAD] + rows)
         return file_response(("\ufeff" + txt + "\n").encode(), fname + ".csv", "text/csv; charset=utf-8")
     widths = {"A": 18, "B": 12, "C": 12, "D": 6, "E": 8, "F": 10, "G": 16, "H": 12, "I": 22, "J": 16, "K": 14, "L": 14,
               "M": 15, "N": 17, "O": 26, "P": 26}
@@ -1835,13 +1850,7 @@ async def history_csv(device_id: str, chamber: int, hours: int = 24, user: dict 
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     cursor = db.plc_history.find({"device_id": device_id, "chamber": chamber, "ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1)
 
-    def fmt(v):
-        if v is None:
-            return ""
-        if not _num(v):
-            v = str(v)
-            return ("'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v).replace(";", " ")
-        return str(v).replace(".", ",")
+    fmt = csv_cell
 
     async def gen():
         yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_zamkn_%;kurtyna_P_zamkn_%;komin_otw_%\n"
