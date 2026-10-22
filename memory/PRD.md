@@ -128,3 +128,6 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 ## 2026-06 Logo Marco-Polo
 - Swinka zastapiona logo GRUPA MARCO-POLO (bez tla) na ekranie powitalnym i logowania; ikony PWA/favicon wygenerowane z logo (ciemne tlo).
 - Strona glowna (wlasciciela): kontakt rozszerzony o adres i strone www (pola w Ustawienia -> karta Strona, superadmin). Login klientow bez zmian (tylko tel/email).
+- Formularz kontaktowy na stronie glownej (POST /api/public/contact, honeypot, limit 3/IP/h + 30/h globalnie) -> e-mail z karty Strona.
+- Logo klienta (fallback Marco-Polo, backend/assets/marco-polo.png) w naglowku wszystkich eksportow Excel oraz inline w mailu raportu miesiecznego (HTML).
+- Backlog: SMS SMSAPI.pl (P1), refaktor server.py (P2).

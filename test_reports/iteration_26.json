@@ -1,0 +1,21 @@
+{
+  "summary": "Iteration 26: tested public contact form (backend + UI), site settings address/website, client logo embedded in xlsx exports (cycles, usage range, history) incl. Marco-Polo fallback, monthly report send, login/welcome logo regression. Backend 16/16 pytest passed; frontend flows all passed on mobile 390px.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "POST /api/public/contact", "issue": "Rate limit keyed on first X-Forwarded-For entry which the client can spoof (sending a random XFF bypasses the 3/IP/h limit); only the global 30/h cap remains as protection. Consider using the last/ingress-appended XFF entry."}
+  ]},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [
+    {"screen": "Settings > site-card (mobile 390px)", "issues": ["2-column grid truncates email/website/address input values (e.g. 'biuro@marcopolo-w', 'ul. Przykładowa 1') – consider 1 column on mobile, at least for address/website", "Helper text still says 'Telefon i e-mail widoczne na stronie głównej' though website and address are also shown now"]}
+  ]},
+  "test_report_links": ["/app/backend/tests/test_iteration26_contact_logo.py", "/app/test_reports/pytest/pytest_iter26.xml"],
+  "action_items": ["(Optional) single-column layout for site-card inputs on mobile and update helper text", "(Optional) harden contact rate-limit IP source"],
+  "critical_code_review_comments": [
+    "public_contact inserts the rate-limit record before sending, so failed (503) sends also consume quota – acceptable anti-spam behaviour, just note it",
+    "server.py is ~1790 lines – should be split into routers (site/contact, reports/xlsx, cycles)"
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration26_contact_logo.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None persisted; site settings restored to original values, contact_requests collection cleared.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified: contact-form-open visible when site email set; client error 'Podaj telefon lub e-mail...'; real submit shows 'Nie udało się wysłać...' (503, SMTP not configured – expected). Backend: 422 short name/message/no contact/bad email, honeypot 200 no DB record, 3x503 then 429 per XFF IP, 503 when site email empty. xlsx: 1 image at A1, rows 1-5 empty, bold header row 6 on all sheets; chlodnia-01 (Marco Polo client, no logo) gets fallback logo different from kowalski-a client logo. CSV unchanged. monthly-report/send 200. Login logo /marco-polo.png, welcome-brand-logo present. Settings screenshot of site-card at 390px taken (.screenshots/settings_site_card_mobile.jpg). Clear db.contact_requests before rerunning contact tests."
+}

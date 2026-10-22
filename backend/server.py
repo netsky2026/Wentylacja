@@ -1116,7 +1116,7 @@ async def public_contact(body: ContactIn, request: Request):
     site = await db.site_settings.find_one({"_id": "main"}) or {}
     if not site.get("email"):
         raise HTTPException(503, "contact not configured")
-    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[0].strip()
+    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[-1].strip()
     since = datetime.now(timezone.utc) - timedelta(hours=1)
     if (await db.contact_requests.count_documents({"ip": ip, "ts": {"$gte": since}}) >= 3
             or await db.contact_requests.count_documents({"ts": {"$gte": since}}) >= 30):

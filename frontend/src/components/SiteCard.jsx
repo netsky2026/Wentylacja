@@ -45,7 +45,7 @@ export const SiteCard = ({ t, site, reloadSite }) => {
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>{t.siteLogoHint}</div>
       <SiteLogo t={t} site={site} reloadSite={reloadSite} />
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>{t.siteHint}</div>
-      <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+      <div className="grid gap-2 sm:grid-cols-2">
         <input className="num-input" style={{ fontSize: 13 }} placeholder="+48 600 000 000" value={phone} onChange={(e) => setPhone(e.target.value)} data-testid="site-phone" />
         <input className="num-input" style={{ fontSize: 13 }} placeholder="biuro@firma.pl" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="site-email" />
         <input className="num-input" style={{ fontSize: 13 }} placeholder="www.firma.pl" value={website} onChange={(e) => setWebsite(e.target.value)} data-testid="site-website" />
