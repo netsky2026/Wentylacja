@@ -2,7 +2,7 @@ import { LogIn, Phone, Mail, Thermometer, Droplets, Wind } from "lucide-react";
 import { useEffect } from "react";
 import { siteLogoUrl } from "@/api";
 
-const Contact = ({ site }) => {
+export const Contact = ({ site }) => {
   if (!site?.phone && !site?.email) return null;
   return (
     <div className="welcome-rise flex flex-wrap gap-x-6 gap-y-2" style={{ animationDelay: "420ms", fontSize: 13 }} data-testid="welcome-contact-block">

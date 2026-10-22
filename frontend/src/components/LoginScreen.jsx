@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { LogIn, ArrowLeft } from "lucide-react";
 import { API, formatApiError, siteLogoUrl } from "@/api";
+import { Contact } from "@/components/WelcomeScreen";
 
 export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack, site }) => {
   useEffect(() => {
@@ -31,7 +32,7 @@ export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack, site }) 
         <div className="flex items-center justify-between" style={{ marginBottom: 28 }}>
           <div className="flex items-center gap-3">
             {onBack && <button className="sp-btn" onClick={onBack} data-testid="login-back" aria-label={t.back}><ArrowLeft size={16} /></button>}
-            <img src={logo} alt="" data-testid="login-logo" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "contain" }} />
+            <img src={logo} alt="" data-testid="login-logo" style={{ width: brand ? 56 : 76, height: brand ? 56 : 76, borderRadius: 16, objectFit: "contain" }} />
           </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>
             {["pl", "en"].map((l) => (
@@ -58,6 +59,12 @@ export const LoginScreen = ({ t, onLogin, lang, setLang, brand, onBack, site }) 
             <LogIn size={16} /> {busy ? "…" : t.loginBtn}
           </button>
         </form>
+        {!brand && (site?.phone || site?.email) && (
+          <div className="panel panel-pad" style={{ marginTop: 14 }} data-testid="login-contact">
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>{t.loginContact}</div>
+            <Contact site={site} />
+          </div>
+        )}
       </div>
     </div>
   );
