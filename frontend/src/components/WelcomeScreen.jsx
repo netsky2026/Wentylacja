@@ -21,7 +21,6 @@ export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
       <div className="welcome-content">
         <header className="flex items-center justify-between welcome-rise">
           <div className="flex items-center gap-3">
-            <img src={siteLogoUrl(site)} alt="" data-testid="welcome-brand-logo" style={{ width: 44, height: 44, borderRadius: 12, objectFit: "contain" }} />
             <span className="font-head" style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>Marco Polo</span>
           </div>
           <div className="panel flex" style={{ overflow: "hidden" }}>
@@ -34,6 +33,8 @@ export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
         </header>
 
         <main className="welcome-main">
+          <img src={siteLogoUrl(site)} alt="" className="welcome-rise" data-testid="welcome-brand-logo"
+            style={{ width: 104, height: 104, objectFit: "contain", borderRadius: 22, marginBottom: 22, animationDelay: "40ms" }} />
           <div className="welcome-rise flex items-center gap-2" style={{ animationDelay: "80ms", fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--primary)" }}>
             <span className="welcome-led" /> {t.welcomeKicker}
           </div>
@@ -50,10 +51,15 @@ export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
           <button className="welcome-cta welcome-rise" style={{ animationDelay: "360ms" }} onClick={onLogin} data-testid="welcome-login-button">
             <LogIn size={18} /> {t.loginBtn}
           </button>
+          {(site?.phone || site?.email) && (
+            <div className="welcome-rise welcome-contact" style={{ animationDelay: "420ms" }} data-testid="welcome-contact-card">
+              <div style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>{t.loginContact}</div>
+              <Contact site={site} />
+            </div>
+          )}
         </main>
 
         <footer className="flex flex-col gap-3" style={{ paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
-          <Contact site={site} />
           <div style={{ fontSize: 11, color: "var(--muted)" }}>© {new Date().getFullYear()} Marco Polo Wentylacja</div>
         </footer>
       </div>
