@@ -349,3 +349,9 @@ input[type=checkbox] { accent-color: var(--primary); }
   background: rgba(20,20,20,0.6); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 .welcome-logo { display: block; margin-bottom: 26px; animation-delay: 40ms; width: min(300px, 78vw); height: auto; filter: drop-shadow(0 4px 18px rgba(0,0,0,0.55)); }
 .welcome-logo-img { width: 104px; height: 104px; object-fit: contain; border-radius: 22px; margin-bottom: 22px; animation-delay: 40ms; }
+.contact-toggle { margin-top: 14px; background: none; border: none; padding: 0; cursor: pointer; font-size: 14px; color: var(--primary); }
+.contact-form { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.contact-form textarea { resize: vertical; font-size: 14px; }
+.contact-form input { font-size: 14px; }
+.contact-sent { display: flex; align-items: center; gap: 10px; color: var(--primary); font-size: 14px; }
+.contact-hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }

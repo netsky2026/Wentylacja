@@ -734,6 +734,7 @@ async def lifespan(app: FastAPI):
     await db.plc_history.create_index([("device_id", 1), ("ts", 1)])
     await db.plc_plant_history.create_index([("device_id", 1), ("ts", 1)])
     await db.devices.create_index("device_id", unique=True)
+    await db.contact_requests.create_index("ts", expireAfterSeconds=3600)
     gateway.mqtt_start()
     sims.sync()
     tasks = [asyncio.create_task(history_sampler()), asyncio.create_task(alarm_notifier()),
@@ -1098,6 +1099,39 @@ async def delete_site_logo(user: dict = Depends(require("superadmin"))):
     return {"ok": True}
 
 
+class ContactIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    phone: str = Field(default="", max_length=40, pattern=r"^[0-9+ ()-]*$")
+    email: str = Field(default="", max_length=254, pattern=r"^([^@\s;,]+@[^@\s;,]+\.[^@\s;,]+)?$")
+    message: str = Field(min_length=5, max_length=2000)
+    company: str = Field(default="", max_length=200)
+
+
+@api.post("/public/contact")
+async def public_contact(body: ContactIn, request: Request):
+    if body.company:
+        return {"ok": True}
+    if not body.phone.strip() and not body.email.strip():
+        raise HTTPException(422, "phone or email required")
+    site = await db.site_settings.find_one({"_id": "main"}) or {}
+    if not site.get("email"):
+        raise HTTPException(503, "contact not configured")
+    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[0].strip()
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    if (await db.contact_requests.count_documents({"ip": ip, "ts": {"$gte": since}}) >= 3
+            or await db.contact_requests.count_documents({"ts": {"$gte": since}}) >= 30):
+        raise HTTPException(429, "too many requests")
+    await db.contact_requests.insert_one({"ip": ip, "ts": datetime.now(timezone.utc)})
+    text = (f"Nowe zapytanie ze strony głównej\n\nImię / firma: {body.name.strip()}\nTelefon: {body.phone.strip() or '-'}\n"
+            f"E-mail: {body.email.strip() or '-'}\n\nWiadomość:\n{body.message.strip()}\n")
+    st, err = await asyncio.to_thread(notify.deliver, "email", site["email"], f"Zapytanie ze strony – {body.name.strip()[:60]}", text,
+                                      (), None, None, body.email.strip() or None)
+    await log_event("info" if st == "sent" else "warning", f"Formularz kontaktowy: {body.name.strip()[:60]} – {st}", {"user": "public"})
+    if st != "sent":
+        raise HTTPException(503, "send failed")
+    return {"ok": True}
+
+
 @api.put("/site")
 async def put_site(body: SiteIn, user: dict = Depends(require("superadmin"))):
     await db.site_settings.update_one({"_id": "main"}, {"$set": {"phone": body.phone.strip(), "email": body.email.strip(),
@@ -1360,17 +1394,45 @@ async def usage_range(device_id: str, start: str, end: str, user: dict = Depends
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def xlsx_bytes(sheets: list) -> bytes:
-    """sheets: [(title, rows, col_widths)] – first row of each sheet is bold header."""
+DEFAULT_REPORT_LOGO = (ROOT_DIR / "assets" / "marco-polo.png").read_bytes()
+LOGO_ROWS = 5
+
+
+def report_logo_png(raw: bytes, height: int) -> bytes:
+    im = Image.open(io.BytesIO(raw)).convert("RGBA")
+    im = im.resize((max(1, round(im.width * height / im.height)), height), Image.LANCZOS)
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
+
+
+async def client_logo(client_id: Optional[str]) -> bytes:
+    c = await db.clients.find_one({"_id": ObjectId(client_id)}) if client_id and ObjectId.is_valid(client_id) else None
+    if c and c.get("logo_path"):
+        try:
+            return await asyncio.to_thread(get_object, c["logo_path"])
+        except Exception as e:
+            logger.warning("client logo unavailable: %s", e)
+    return DEFAULT_REPORT_LOGO
+
+
+def xlsx_bytes(sheets: list, logo: Optional[bytes] = None) -> bytes:
+    """sheets: [(title, rows, col_widths)] – first data row of each sheet is bold header; logo goes above it."""
     from openpyxl import Workbook
     from openpyxl.styles import Font
+    from openpyxl.drawing.image import Image as XlImage
+    png = report_logo_png(logo, 80) if logo else None
     wb = Workbook()
     wb.remove(wb.active)
     for title, rows, widths in sheets:
         ws = wb.create_sheet(title)
+        if png:
+            for _ in range(LOGO_ROWS):
+                ws.append([])
+            ws.add_image(XlImage(io.BytesIO(png)), "A1")
         for r in rows:
             ws.append(r)
-        for c in ws[1] if rows else []:
+        for c in ws[LOGO_ROWS + 1 if png else 1] if rows else []:
             c.font = Font(bold=True)
         for col, w in widths.items():
             ws.column_dimensions[col].width = w
@@ -1388,7 +1450,8 @@ async def usage_xlsx(device_id: str, a: str, b: str) -> bytes:
     summary += [[f"Woda – {nm}", round(w / 1000, 3), "m³"] for nm, w in zip(names, u["water_l"])]
     days = [["Dzień", "Prąd kWh"] + [f"Woda {nm} m³" for nm in names]]
     days += [[r["day"], r["kwh"]] + [round(w / 1000, 3) for w in r["water_l"]] for r in u["days"]]
-    return xlsx_bytes([("Podsumowanie", summary, {"A": 34, "B": 24}), ("Dni", days, {"A": 14})])
+    logo = await client_logo(d["client_id"])
+    return await asyncio.to_thread(xlsx_bytes, [("Podsumowanie", summary, {"A": 34, "B": 24}), ("Dni", days, {"A": 14})], logo)
 
 
 def file_response(data: bytes, fname: str, mime: str) -> Response:
@@ -1433,9 +1496,15 @@ async def send_monthly_report(client_id: str, force: bool = False) -> dict:
     files = tuple([(f"zuzycie_{dv}_{a[:7]}.xlsx", await usage_xlsx(dv, a, b)) for dv in devs])
     name = DEVICES[devs[0]]["client_name"]
     body = f"Dzień dobry,\n\nw załączniku raport zużycia wody i prądu za okres {a} – {b} ({name}).\n\nMarco Polo Wentylacja"
+    from html import escape
+    html = (f'<div style="font-family:Arial,sans-serif;color:#222"><img src="cid:logo" alt="" style="max-height:80px"><br><br>'
+            f'Dzień dobry,<br><br>w załączniku raport zużycia wody i prądu za okres <b>{a} – {b}</b> ({escape(name)}).'
+            f'<br><br>Marco Polo Wentylacja</div>')
+    inline = report_logo_png(await client_logo(client_id), 120)
     res = []
     for r in to:
-        res.append(await asyncio.to_thread(notify.deliver, "email", r, f"Raport miesięczny {a[:7]} – {name}", body, files))
+        res.append(await asyncio.to_thread(notify.deliver, "email", r, f"Raport miesięczny {a[:7]} – {name}", body, files,
+                                           html, inline))
     await db.monthly_reports.update_one({"_id": key}, {"$set": {"ts": now_iso(), "to": to, "status": [x[0] for x in res]}}, upsert=True)
     await log_event("info", f"Raport miesięczny {a[:7]}: " + ", ".join(f"{e} – {st}" for e, (st, _) in zip(to, res)), {"user": "system"},
                     client_id=client_id)
@@ -1529,7 +1598,7 @@ async def cycles_export(device_id: str, fmt: str = "xlsx", chamber: Optional[int
                                   for x in r) for r in [CYCLE_HEAD] + rows)
         return file_response(("\ufeff" + txt + "\n").encode(), fname + ".csv", "text/csv; charset=utf-8")
     widths = {"A": 18, "B": 12, "C": 12, "D": 6, "E": 8, "F": 10, "G": 16, "H": 12, "I": 22, "J": 26, "K": 26}
-    data = await asyncio.to_thread(xlsx_bytes, [("Chowy", [CYCLE_HEAD] + rows, widths)])
+    data = await asyncio.to_thread(xlsx_bytes, [("Chowy", [CYCLE_HEAD] + rows, widths)], await client_logo(d["client_id"]))
     return file_response(data, fname + ".xlsx", XLSX_MIME)
 
 
@@ -1591,7 +1660,8 @@ async def history_xlsx(device_id: str, chamber: int, hours: int = 24, user: dict
                      None if cr is None else round(100 - cr, 1), doc.get("chimney")])
     title = ch_name(device_id, chamber)[:31].translate(str.maketrans("[]:*?/\\", "       "))
     fname = f"{device_id}_komora{chamber + 1}_{hours}h_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-    return file_response(await asyncio.to_thread(xlsx_bytes, [(title, rows, {"A": 20, "B": 15, "C": 14, "D": 10, "E": 18, "F": 18, "G": 13})]),
+    return file_response(await asyncio.to_thread(xlsx_bytes, [(title, rows, {"A": 20, "B": 15, "C": 14, "D": 10, "E": 18, "F": 18, "G": 13})],
+                                                 await client_logo(d["client_id"])),
                          fname, XLSX_MIME)
 
 

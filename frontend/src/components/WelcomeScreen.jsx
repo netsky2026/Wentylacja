@@ -1,6 +1,7 @@
 import { LogIn, Phone, Mail, MapPin, Globe, Thermometer, Droplets, Wind } from "lucide-react";
 import { useEffect } from "react";
 import { siteLogoUrl } from "@/api";
+import { ContactForm } from "@/components/ContactForm";
 
 export const Contact = ({ site, full }) => {
   if (!site?.phone && !site?.email && !(full && (site?.address || site?.website))) return null;
@@ -63,6 +64,7 @@ export const WelcomeScreen = ({ t, site, lang, setLang, onLogin }) => {
               <Contact site={site} full />
             </div>
           )}
+          {site?.email && <ContactForm t={t} />}
         </main>
 
         <footer className="flex flex-col gap-3" style={{ paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
