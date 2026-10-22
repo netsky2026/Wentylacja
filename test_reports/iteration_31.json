@@ -1,0 +1,33 @@
+{
+  "summary": "Tested three features: the superadmin 'Podgląd MQTT' panel (backend and UI), logout revocation per session and 'Wyloguj ze wszystkich urządzeń', and account lockout with 'Odblokuj'. Ran the regression checks too. Backend: 15/15 pytest tests pass; the first run had 1 failure, caused by my wrong test assumption, which I fixed in the test. (1) GET /devices/kowalski-a/mqtt-debug returns 200 for superadmin with all fields: online true, broker_connected true, state/command topics, last_message.ok true with valid JSON and the topic equal to state_topic. Client admin, operator and viewer get 403, anonymous gets 401 and an unknown device gets 404. (2) Rejection reasons: I turned the simulator off with PATCH, published to broker.hivemq.com and turned it back on afterwards. Results: non-JSON -> 'To nie jest poprawny JSON (UTF-8)'; a JSON array -> 'Wiadomość musi być obiektem JSON'; no chambers -> 'Brak listy \"chambers\"'; 2 chambers -> 'Zła liczba komór: przysłano 2, sterownik ma 6'; co2 missing -> 'Komora id=0: brak lub nieprawidłowa wartość pól: co2'. After the simulator was re-enabled, ok was true again. (3) After POST command set_setpoint ch0, last_command has the right topic, payload (type/chamber/value/request_id) and ok true. (4) Logout: the old access_token (as cookie or Bearer) and the old refresh_token both get 401. A second session of the same user stays valid, and its refresh works. A token rotated by refresh keeps the same sid and is also revoked on logout. A foreign Origin on logout gets 403. (5) logout-all: every session gets 401 on /me and /refresh, a new login works, and anonymous gets 401. (6) Lockout: 5 failures return 401 and the 6th returns 429, even with the correct password. locked:true appears for both client admin and superadmin. Client admin and superadmin can unlock and login then works. Client admin unlocking another client's user, the superadmin or an invalid id gets 404; operator gets 403; anonymous gets 401. (7) Regression: me/refresh work. Password change: a wrong current password gets 400, success keeps the current session, the other session gets 401 and the new password works. DB: the revoked_sessions TTL index (exp, 0) and the login_attempts TTL index (900 s) exist, and the admin hash is $2b$. Frontend: as superadmin at 390px and 1920px, device-mqtt-kowalski-a opens mqtt-debug-kowalski-a. mqtt-debug-status shows 'Broker: połączony · Sterownik: online', mqtt-debug-result shows 'Przyjęta – format poprawny', and the payload refreshes every 2 s. mqtt-debug-command appears after a command. Close and toggle work. A rejected message shows 'Odrzucona: To nie jest poprawny JSON (UTF-8)' in red. At 390px there is no horizontal overflow (scrollWidth 390) and the long JSON wraps. The client admin sees no MQTT buttons. In the Users card, the user-locked-<email> badge and user-unlock-<email> button appear; clicking unlock removes both and the user can log in. logout-all-btn shows the confirm dialog and returns to the login screen; the old token gets 401 and a reload stays logged out. logout-btn also revokes the old token. WebSocket live updates work (5 frames in 5 s, dashboard values change).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login (lockout)", "issue": "Lockout is per email only, so anyone can lock any account for 15 min by sending 5 wrong passwords. That includes the superadmin, and only another superadmin can unlock it. This is an accepted trade-off but worth noting. The check-then-increment is also not atomic, so parallel requests can go past 5 attempts before the 429 starts."},
+      {"endpoint": "GET /api/devices/{id}/mqtt-debug", "issue": "gateway.raw and last_cmd are kept in memory only, so they are lost on every backend restart or hot reload and last_command shows 'none' again. 'online' stays true for up to 10 s while only rejected messages arrive. Both are acceptable for a debug view."},
+      {"endpoint": "WebSocket after logout", "issue": "ws_revalidator only checks every 30 s, so an open WebSocket keeps receiving state for up to 30 s after the session is revoked by logout or logout-all."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration31_mqtt_debug_sessions.py", "/app/backend/tests/it31_pub_invalid.py", "/app/test_reports/pytest/pytest_it31.xml"],
+  "action_items": [
+    "(Optional) Make the lockout increment atomic with findOneAndUpdate and $inc, then check the returned count.",
+    "(Optional) Close the WebSocket right away on logout and logout-all by removing that user's or sid's entries from gateway.ws_clients, instead of waiting up to 30 s."
+  ],
+  "critical_code_review_comments": [
+    "origin_allowed returns True when there is no Origin header. That is fine for browsers, which always send Origin on cross-site POST, but it means mutations from non-browser clients pass without an Origin check. This is by design.",
+    "server.py is about 2000 lines; split it into modules (gateway, reports, devices).",
+    "Old traceback in backend.err.log: TypeError 'async_generator' object is not iterable in send_monthly_report. The line numbers do not match the current file, so it probably comes from an earlier iteration; not reproduced now."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration31_mqtt_debug_sessions.py", "/app/backend/tests/it31_pub_invalid.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100%"},
+  "test_credentials": "Superadmin admin@chlewnia.pl / Wentylacja!2026; client admin kowalski.admin@kowalski.pl / KowalskiAdm!2026",
+  "seed_data_creation": "The tests create throwaway users test_it31_*@example.com and test_it31ui_*@example.com, all deleted afterwards (verified that no test users remain). The kowalski-a simulator was turned off briefly and is back on (simulated true, online). Kowalski rates kwh 0.85 / m3 6.5 are untouched, and /api/site was not touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=... python -m pytest tests/test_iteration31_mqtt_debug_sessions.py -n 0. Editing files under /app/backend (including tests/) triggers a uvicorn reload, which clears the in-memory mqtt-debug last_command. test_rejection_reasons turns the simulator off and back on in a finally block. Publish to broker.hivemq.com:1883, topic emgt-fatek-7f3a9c/kowalski-a/state."
+}

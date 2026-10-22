@@ -140,3 +140,5 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Porownanie ferm dla superadmina (GET /api/farms/compare, /xlsx; FarmCompareCard w Dane): koszt/woda/prad na sztuke.
 - Poprawki z audytu bezpieczenstwa: neutralizacja formul w CSV/XLSX (csv_cell, data_type s), CR/LF w imieniu formularza kontaktowego.
 - Specyfikacja PLC: deploy/SPECYFIKACJA_PLC.md + PDF (frontend/public/specyfikacja-plc.pdf).
+- Podglad MQTT (superadmin, GET /api/devices/{id}/mqtt-debug, MqttDebugPanel w FleetCard): ostatnia surowa wiadomosc + powod odrzucenia (state_error) + ostatnie polecenie (w pamieci).
+- Sesje: sid w JWT, wylogowanie uniewaznia sesje (revoked_sessions TTL), POST /api/auth/logout-all (tv+1), odblokowanie kont (GET /api/users locked, POST /api/users/{id}/unlock).
