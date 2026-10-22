@@ -1448,6 +1448,15 @@ async def usage_xlsx(device_id: str, a: str, b: str) -> bytes:
     summary = [[f"{d['client_name']} – {d['name']}", f"{a} – {b}", ""], ["Pozycja", "Zużycie", "Jednostka"],
                ["Prąd (cała chlewnia)", u["kwh"], "kWh"], ["Woda razem", round(u["water_total_l"] / 1000, 3), "m³"]]
     summary += [[f"Woda – {nm}", round(w / 1000, 3), "m³"] for nm, w in zip(names, u["water_l"])]
+    r = await client_rates(d["client_id"])
+    if r.get("kwh") is not None or r.get("m3") is not None:
+        summary += [[], ["Koszty", "Kwota", "Stawka"]]
+        if r.get("kwh") is not None:
+            summary.append(["Koszt prądu", money(u["kwh"] * r["kwh"]), f"{r['kwh']} zł/kWh"])
+        if r.get("m3") is not None:
+            summary.append(["Koszt wody razem", money(u["water_total_l"] / 1000 * r["m3"]), f"{r['m3']} zł/m³"])
+            summary += [[f"Koszt wody – {nm}", money(w / 1000 * r["m3"]), "zł"] for nm, w in zip(names, u["water_l"])]
+        summary.append(["KOSZT RAZEM", money(u["kwh"] * (r.get("kwh") or 0) + u["water_total_l"] / 1000 * (r.get("m3") or 0)), "zł"])
     days = [["Dzień", "Prąd kWh"] + [f"Woda {nm} m³" for nm in names]]
     days += [[r["day"], r["kwh"]] + [round(w / 1000, 3) for w in r["water_l"]] for r in u["days"]]
     logo = await client_logo(d["client_id"])
@@ -1495,11 +1504,19 @@ async def send_monthly_report(client_id: str, force: bool = False) -> dict:
         return {"sent": 0, "recipients": to}
     files = tuple([(f"zuzycie_{dv}_{a[:7]}.xlsx", await usage_xlsx(dv, a, b)) for dv in devs])
     name = DEVICES[devs[0]]["client_name"]
-    body = f"Dzień dobry,\n\nw załączniku raport zużycia wody i prądu za okres {a} – {b} ({name}).\n\nMarco Polo Wentylacja"
+    r = await client_rates(client_id)
+    cost = ""
+    if r.get("kwh") is not None or r.get("m3") is not None:
+        us = [await usage_between(dv, a, b) for dv in devs]
+        cp = sum(u["kwh"] for u in us) * (r.get("kwh") or 0)
+        cw = sum(u["water_total_l"] for u in us) / 1000 * (r.get("m3") or 0)
+        cost = f"Koszt prądu: {cp:.2f} zł, koszt wody: {cw:.2f} zł, razem: {cp + cw:.2f} zł."
+    body = (f"Dzień dobry,\n\nw załączniku raport zużycia wody i prądu za okres {a} – {b} ({name}).\n"
+            + (f"{cost}\n" if cost else "") + "\nMarco Polo Wentylacja")
     from html import escape
     html = (f'<div style="font-family:Arial,sans-serif;color:#222"><img src="cid:logo" alt="" style="max-height:80px"><br><br>'
             f'Dzień dobry,<br><br>w załączniku raport zużycia wody i prądu za okres <b>{a} – {b}</b> ({escape(name)}).'
-            f'<br><br>Marco Polo Wentylacja</div>')
+            + (f'<br><b>{cost}</b>' if cost else '') + '<br><br>Marco Polo Wentylacja</div>')
     inline = report_logo_png(await client_logo(client_id), 120)
     res = []
     for r in to:
@@ -1546,6 +1563,27 @@ async def monthly_report_put(body: MonthlyIn, client_id: Optional[str] = None, u
     return {"enabled": body.enabled}
 
 
+class RatesIn(BaseModel):
+    kwh: Optional[float] = Field(default=None, ge=0, le=100)
+    m3: Optional[float] = Field(default=None, ge=0, le=1000)
+
+
+@api.get("/rates")
+async def get_rates(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    r = c.get("rates") or {}
+    return {"kwh": r.get("kwh"), "m3": r.get("m3")}
+
+
+@api.put("/rates")
+async def put_rates(body: RatesIn, client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
+    c = await client_or_404(client_scope(user, client_id))
+    await db.clients.update_one({"_id": c["_id"]}, {"$set": {"rates": {"kwh": body.kwh, "m3": body.m3}}})
+    await log_event("info", f"Stawki: prąd {body.kwh if body.kwh is not None else '-'} zł/kWh, woda {body.m3 if body.m3 is not None else '-'} zł/m³",
+                    {"user": user["email"]}, client_id=str(c["_id"]))
+    return {"kwh": body.kwh, "m3": body.m3}
+
+
 class CycleIn(BaseModel):
     start: str = Field(pattern=DATE_RX)
     animals: Optional[int] = Field(default=None, ge=0, le=100000)
@@ -1555,35 +1593,72 @@ class CycleEndIn(BaseModel):
     end: Optional[str] = Field(default=None, pattern=DATE_RX)
 
 
-async def cycle_view(c: dict) -> dict:
+async def client_rates(client_id: Optional[str]) -> dict:
+    c = await db.clients.find_one({"_id": ObjectId(client_id)}, {"rates": 1}) if client_id and ObjectId.is_valid(client_id) else None
+    return (c or {}).get("rates") or {}
+
+
+async def cycle_ctx(device_id: str) -> dict:
+    cycles = await db.cycles.find({"device_id": device_id}, {"chamber": 1, "start": 1, "end": 1}).to_list(5000)
+    days = {r["day"]: r.get("kwh", 0) async for r in db.meter_daily.find({"device_id": device_id}, {"day": 1, "kwh": 1})}
+    return {"cycles": cycles, "days": days, "rates": await client_rates(DEVICES[device_id]["client_id"])}
+
+
+def chamber_kwh(c: dict, end: str, ctx: dict) -> float:
+    """Plant kWh of each day split equally between chambers with a running cycle that day."""
+    today, total = local_day(), 0.0
+    for day, kwh in ctx["days"].items():
+        if not (c["start"] <= day <= end) or not kwh:
+            continue
+        n = sum(1 for x in ctx["cycles"] if x["start"] <= day <= (x.get("end") or today))
+        total += kwh / max(n, 1)
+    return round(total, 2)
+
+
+def money(v: Optional[float]) -> Optional[float]:
+    return None if v is None else round(v, 2)
+
+
+async def cycle_view(c: dict, ctx: Optional[dict] = None) -> dict:
+    ctx = ctx or await cycle_ctx(c["device_id"])
     end = c.get("end") or local_day()
     u = await usage_between(c["device_id"], c["start"], end) if c["start"] <= end else {"kwh": 0, "water_l": []}
     w = u["water_l"][c["chamber"]] if c["chamber"] < len(u["water_l"]) else 0
+    kwh_ch = chamber_kwh(c, end, ctx)
+    r = ctx["rates"]
+    cw = w / 1000 * r["m3"] if r.get("m3") is not None else None
+    cp = kwh_ch * r["kwh"] if r.get("kwh") is not None else None
+    tot = None if cw is None and cp is None else (cw or 0) + (cp or 0)
     return {"id": str(c["_id"]), "chamber": c["chamber"], "start": c["start"], "end": c.get("end"), "animals": c.get("animals"),
             "days": (datetime.fromisoformat(end) - datetime.fromisoformat(c["start"])).days + 1,
             "water_l": w, "water_per_head_l": round(w / c["animals"], 2) if c.get("animals") else None,
-            "kwh": u["kwh"], "started_by": c.get("started_by"), "ended_by": c.get("ended_by")}
+            "kwh": u["kwh"], "kwh_chamber": kwh_ch, "cost_water": money(cw), "cost_power": money(cp), "cost_total": money(tot),
+            "cost_per_head": money(tot / c["animals"]) if tot is not None and c.get("animals") else None,
+            "started_by": c.get("started_by"), "ended_by": c.get("ended_by")}
 
 
 @api.get("/devices/{device_id}/cycles")
 async def list_cycles(device_id: str, chamber: int, user: dict = Depends(require("viewer"))):
     device_or_404(user, device_id)
     rows = await db.cycles.find({"device_id": device_id, "chamber": chamber}).sort("start", -1).to_list(100)
-    return {"cycles": [await cycle_view(c) for c in rows]}
+    ctx = await cycle_ctx(device_id)
+    return {"cycles": [await cycle_view(c, ctx) for c in rows]}
 
 
 CYCLE_HEAD = ["Komora", "Wstawienie", "Koniec", "Dni", "Sztuk", "Woda m³", "Woda na sztukę l", "l/szt./dzień",
-              "Prąd kWh (cała chlewnia)", "Wpisał", "Zakończył"]
+              "Prąd kWh (cała chlewnia)", "Prąd kWh (komora)", "Koszt wody zł", "Koszt prądu zł", "Koszt razem zł",
+              "Koszt na sztukę zł", "Wpisał", "Zakończył"]
 
 
 async def cycle_rows(device_id: str, chamber: Optional[int]) -> list:
     q = {"device_id": device_id, **({"chamber": chamber} if chamber is not None else {})}
-    out = []
+    out, ctx = [], await cycle_ctx(device_id)
     for c in await db.cycles.find(q).sort([("chamber", 1), ("start", -1)]).to_list(2000):
-        v = await cycle_view(c)
+        v = await cycle_view(c, ctx)
         ph = v["water_per_head_l"]
         out.append([ch_name(device_id, v["chamber"]), v["start"], v["end"] or "trwa", v["days"], v["animals"],
                     round(v["water_l"] / 1000, 3), ph, round(ph / v["days"], 3) if ph is not None else None, v["kwh"],
+                    v["kwh_chamber"], v["cost_water"], v["cost_power"], v["cost_total"], v["cost_per_head"],
                     v["started_by"], v["ended_by"]])
     return out
 
@@ -1597,7 +1672,8 @@ async def cycles_export(device_id: str, fmt: str = "xlsx", chamber: Optional[int
         txt = "\n".join(";".join("" if x is None else str(x).replace(";", " ").replace(".", ",") if isinstance(x, float) else str(x).replace(";", " ")
                                   for x in r) for r in [CYCLE_HEAD] + rows)
         return file_response(("\ufeff" + txt + "\n").encode(), fname + ".csv", "text/csv; charset=utf-8")
-    widths = {"A": 18, "B": 12, "C": 12, "D": 6, "E": 8, "F": 10, "G": 16, "H": 12, "I": 22, "J": 26, "K": 26}
+    widths = {"A": 18, "B": 12, "C": 12, "D": 6, "E": 8, "F": 10, "G": 16, "H": 12, "I": 22, "J": 16, "K": 14, "L": 14,
+              "M": 15, "N": 17, "O": 26, "P": 26}
     data = await asyncio.to_thread(xlsx_bytes, [("Chowy", [CYCLE_HEAD] + rows, widths)], await client_logo(d["client_id"]))
     return file_response(data, fname + ".xlsx", XLSX_MIME)
 

@@ -15,6 +15,16 @@ const PerHead = ({ t, c, avg }) => {
     </span>
   );
 };
+const zl = (v) => `${v.toFixed(2).replace(".", ",")} zł`;
+const Costs = ({ t, c }) => (<>
+  <div style={{ color: "var(--muted)", fontSize: 12 }} data-testid={`cycle-power-${c.id}`}>{t.powerChamber}: <b style={{ color: "var(--text)" }}>{c.kwh_chamber} kWh</b></div>
+  {c.cost_total != null && (
+    <div style={{ fontSize: 12, marginTop: 2 }} data-testid={`cycle-cost-${c.id}`}>
+      {c.cost_water != null && <>{t.costWater}: {zl(c.cost_water)} · </>}{c.cost_power != null && <>{t.costPower}: {zl(c.cost_power)} · </>}
+      {t.costTotal}: <b style={{ color: "var(--primary)" }}>{zl(c.cost_total)}</b>{c.cost_per_head != null && <> ({zl(c.cost_per_head)} {t.costPerHead})</>}
+    </div>
+  )}
+</>);
 const avgOf = (rows) => {
   const v = rows.filter((c) => c.water_per_head_l != null).map((c) => c.water_per_head_l / c.days);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
@@ -48,6 +58,7 @@ const Past = ({ t, rows, deviceId }) => (<>
       <div key={c.id} className="reg-cell" style={{ padding: "8px 10px", fontSize: 12 }} data-testid={`cycle-row-${c.id}`}>
         <div style={{ fontWeight: 700 }}>{c.start} – {c.end} · {c.days} {t.cycleDays}{c.animals != null ? ` · ${c.animals} ${t.cyclePcs}` : ""}</div>
         <div style={{ color: "var(--muted)" }}>{t.water}: {m3(c.water_l)} m³<PerHead t={t} c={c} avg={avgOf(rows.filter((x) => x.id !== c.id))} /> · {t.powerPlant}: {c.kwh} kWh</div>
+        <Costs t={t} c={c} />
         <div style={{ color: "var(--muted)", fontSize: 10 }}>{c.started_by}{c.ended_by && c.ended_by !== c.started_by ? ` / ${c.ended_by}` : ""}</div>
       </div>
     ))}
@@ -82,6 +93,7 @@ export const CycleCard = ({ t, ch, deviceId, canEdit }) => {
           <div className="font-head" style={{ fontSize: 17, fontWeight: 700 }}>{t.cycleSince} {active.start} · {t.cycleDay} {active.days}</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
             {active.animals != null && <>{active.animals} {t.cyclePcs} · </>}{t.water}: <b style={{ color: "var(--text)" }} data-testid="cycle-active-water">{m3(active.water_l)} m³</b><PerHead t={t} c={active} avg={avgOf(rows.filter((c) => c.end))} /> · {t.powerPlant}: {active.kwh} kWh</div>
+          <div style={{ marginTop: 2 }}><Costs t={t} c={active} /></div>
           <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>{t.cycleBy} {active.started_by}</div>
         </div>
       ) : !form && <div style={{ fontSize: 12, color: "var(--muted)" }}>{t.cycleNone}</div>}

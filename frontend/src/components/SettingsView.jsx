@@ -6,6 +6,7 @@ import { AccountCard, UsersCard } from "@/components/AccountCards";
 import { AlarmRecipientsCard } from "@/components/AlarmRecipientsCard";
 import { AutoReturnCard } from "@/components/AutoReturnCard";
 import { MonthlyReportCard } from "@/components/MonthlyReportCard";
+import { RatesCard } from "@/components/RatesCard";
 import { FleetCard } from "@/components/FleetCard";
 import { ChamberNameEdit } from "@/components/ChamberNameEdit";
 import { SiteCard } from "@/components/SiteCard";
@@ -88,6 +89,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
 
       {isAdmin && (user.role !== "superadmin" || clientId) && <>
         <AutoReturnCard key={`r-${clientId}`} t={t} clientId={clientId} clientName={dev?.client_name} onSaved={reloadDevices} />
+        <RatesCard key={`p-${clientId}`} t={t} clientId={clientId} clientName={dev?.client_name} />
         <MonthlyReportCard key={`m-${clientId}`} t={t} clientId={clientId} clientName={dev?.client_name} />
         <AlarmRecipientsCard key={`a-${clientId}`} t={t} clientId={clientId} clientName={dev?.client_name} />
         <UsersCard key={`u-${clientId}`} t={t} me={user} clientId={clientId} clientName={dev?.client_name} />
