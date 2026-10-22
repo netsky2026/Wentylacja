@@ -128,6 +128,7 @@ cd backend && pytest tests/ -q     # testy wymagają działającego backendu i d
   Liczba elementów `chambers` musi się zgadzać z liczbą komór sterownika (id od 0). `water_total_l` i `power_kwh` to **liczniki narastające**. Serwer liczy z nich dzienne przyrosty (`accumulate_meters` → kolekcja `meter_daily`).
 - Polecenia (JSON): `{"type": "set_setpoint" | "set_mode" | "set_vent", "chamber": 0, "value": ...}`
   - `set_setpoint`: liczba 5–35; `set_mode`: `"auto"`/`"manual"`; `set_vent`: `{"curtain_left": 0-100, "curtain_right": 0-100, "chimney": 0-100}`.
+- Test połączenia: `POST /api/devices/{id}/ping` wysyła `{"type":"ping","request_id"}`; sterownik odsyła `"ack": request_id` w stanie. Podgląd: `GET /api/devices/{id}/mqtt-debug` (ostatnia surowa wiadomość, powód odrzucenia – `state_error`, ostatnie polecenie, ping) – dane tylko w pamięci.
 - Sterowniki z flagą `simulated` są symulowane w backendzie (klasa symulatora w `server.py`), do testów bez PLC.
 - Codziennie o ustawionej godzinie (domyślnie 00:00, osobno dla każdej fermy) komory w trybie ręcznym wracają do AUTO (`midnight_auto`, `reset_manual_to_auto`).
 
@@ -135,6 +136,7 @@ cd backend && pytest tests/ -q     # testy wymagają działającego backendu i d
 
 - `history_sampler` – co 15 s zapisuje historię pomiarów (`plc_history`, `plc_plant_history`).
 - `alarm_notifier` – alarmy temperatury i CO₂ → e-mail/SMS do odbiorców (`alarm_settings`).
+- `conn_monitor` – co 10 s: zdarzenia offline/online (kolekcja `conn_state`), alarm po `alarm_settings.offline_min` (domyślnie 5 min) do odbiorców klienta + `ADMIN_EMAIL`, wiadomość o przywróceniu.
 - `ws_revalidator` – zamyka sesje WebSocket usuniętych lub zmienionych użytkowników.
 - `midnight_auto` – powrót do AUTO oraz `monthly_tick`, czyli raport miesięczny 1. dnia miesiąca o 6:00 (Excel w załączniku do adminów klienta).
 

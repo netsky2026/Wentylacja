@@ -169,6 +169,9 @@ class PiggerySimulator:
 
     def apply_command(self, cmd: dict):
         t = cmd.get("type")
+        if t == "ping":
+            self.ack = str(cmd.get("request_id", ""))[:64]
+            return
         try:
             ci = int(cmd.get("chamber", -1))
         except (TypeError, ValueError):
@@ -239,7 +242,7 @@ class PiggerySimulator:
         ch["co2"] = round(max(400.0, min(6000.0, ch["co2"] + (co2_t - ch["co2"]) * 0.03 + random.uniform(-10, 10))), 0)
 
     def snapshot(self) -> dict:
-        return {"device_id": self.device_id, "model": "Fatek FBs-24MC (symulator)",
+        return {"device_id": self.device_id, "model": "Fatek FBs-24MC (symulator)", "ack": getattr(self, "ack", None),
                 "chambers": copy.deepcopy(self.chambers), "plant": dict(self.plant), "ts": now_iso()}
 
     def publish(self):
@@ -392,6 +395,7 @@ class Gateway:
         self.last_seen: dict = {}
         self.raw: dict = {}
         self.last_cmd: dict = {}
+        self.pings: dict = {}
         self.connected = False
         self.mc: Optional[mqtt.Client] = None
 
@@ -434,6 +438,10 @@ class Gateway:
         except Exception:
             rec["error"] = "To nie jest poprawny JSON (UTF-8)"
             return
+        ping = self.pings.get(device_id)
+        if ping and not ping.get("ack_ts") and isinstance(data, dict) and data.get("ack") == ping["request_id"]:
+            ping["ack_ts"] = now_iso()
+            self.schedule(log_event("info", f"{dev_label(device_id)}: sterownik potwierdził polecenie testowe (ping)", {"user": "system"}, device_id))
         payload = sanitize_state(data, device_id)
         if payload is None:
             rec["error"] = state_error(data, device_id)
@@ -722,6 +730,62 @@ async def alarm_notifier():
             logger.warning("alarm notifier failed: %s", e)
 
 
+OFFLINE_ALARM_MIN = 5
+OFFLINE_AFTER_S = 30
+STARTED_AT = time.time()
+
+
+def fmt_gap(sec: float) -> str:
+    m = int(sec // 60)
+    return f"{m // 60} h {m % 60} min" if m >= 60 else f"{m} min" if m else f"{int(sec)} s"
+
+
+async def notify_conn(cid: str, subject: str, body: str, kind: str):
+    await send_alarm(cid, subject, body, kind)
+    if notify.email_configured():
+        await asyncio.to_thread(notify.deliver, "email", os.environ["ADMIN_EMAIL"], subject, body)
+
+
+async def conn_monitor():
+    """Log controller offline/online transitions and alarm after the client's offline_min without data."""
+    conn = {d["_id"]: d async for d in db.conn_state.find({})}
+    while True:
+        await asyncio.sleep(10)
+        try:
+            now = time.time()
+            for device_id in list(DEVICES):
+                st = conn.get(device_id) or {"_id": device_id, "online": None}
+                online, label, cid = gateway.is_online(device_id), dev_label(device_id), DEVICES[device_id]["client_id"]
+                changed = False
+                if online and st["online"] is not True:
+                    if st["online"] is False:
+                        gap = fmt_gap(now - st["changed_at"])
+                        await log_event("info", f"{label}: sterownik znów online (przerwa {gap})", {"user": "system"}, device_id)
+                        if st.get("alerted"):
+                            await notify_conn(cid, f"Połączenie przywrócone: {label}", f"Sterownik znów wysyła dane. Przerwa: {gap}.", "conn_restored")
+                    st.update(online=True, changed_at=now, alerted=False)
+                    changed = True
+                elif not online and st["online"] is True:
+                    seen = max(gateway.last_seen.get(device_id, 0), STARTED_AT)
+                    if now - seen >= OFFLINE_AFTER_S:
+                        st.update(online=False, changed_at=gateway.last_seen.get(device_id) or st.get("changed_at") or now, alerted=False)
+                        await log_event("warning", f"{label}: sterownik offline – brak danych", {"user": "system"}, device_id)
+                        changed = True
+                elif not online and st["online"] is False and not st.get("alerted"):
+                    cfg = await db.alarm_settings.find_one({"_id": cid}) or {}
+                    lim = cfg.get("offline_min", OFFLINE_ALARM_MIN)
+                    if lim and now - st["changed_at"] >= lim * 60:
+                        st["alerted"] = True
+                        changed = True
+                        await notify_conn(cid, f"ALARM: brak połączenia – {label}",
+                                          f"Sterownik nie wysyła danych od {fmt_gap(now - st['changed_at'])}. Sprawdź zasilanie i internet na fermie.", "offline")
+                if changed:
+                    conn[device_id] = st
+                    await db.conn_state.update_one({"_id": device_id}, {"$set": {k: v for k, v in st.items() if k != "_id"}}, upsert=True)
+        except Exception as e:
+            logger.warning("conn monitor failed: %s", e)
+
+
 PL_TZ = ZoneInfo("Europe/Warsaw")
 
 
@@ -768,7 +832,7 @@ async def lifespan(app: FastAPI):
     await db.contact_requests.create_index("ts", expireAfterSeconds=3600)
     gateway.mqtt_start()
     sims.sync()
-    tasks = [asyncio.create_task(history_sampler()), asyncio.create_task(alarm_notifier()),
+    tasks = [asyncio.create_task(history_sampler()), asyncio.create_task(alarm_notifier()), asyncio.create_task(conn_monitor()),
              asyncio.create_task(ws_revalidator()), asyncio.create_task(midnight_auto())]
     yield
     for t in tasks:
@@ -871,6 +935,7 @@ class Recipient(BaseModel):
 class AlarmSettingsIn(BaseModel):
     enabled: bool = True
     recipients: List[Recipient] = Field(default_factory=list, max_length=20)
+    offline_min: Optional[int] = Field(default=None, ge=0, le=1440)
 
 
 EMAIL_RX = r"^[^@\s;,]+@[^@\s;,]+\.[^@\s;,]+$"
@@ -1785,7 +1850,19 @@ async def mqtt_debug(device_id: str, user: dict = Depends(require("superadmin"))
     device_or_404(user, device_id)
     return {"online": gateway.is_online(device_id), "broker_connected": gateway.connected,
             "state_topic": state_topic(device_id), "command_topic": command_topic(device_id),
-            "last_message": gateway.raw.get(device_id), "last_command": gateway.last_cmd.get(device_id)}
+            "last_message": gateway.raw.get(device_id), "last_command": gateway.last_cmd.get(device_id),
+            "ping": gateway.pings.get(device_id)}
+
+
+@api.post("/devices/{device_id}/ping")
+async def ping_device(device_id: str, user: dict = Depends(require("superadmin"))):
+    device_or_404(user, device_id)
+    rid = uuid.uuid4().hex[:16]
+    if not gateway.publish_command(device_id, {"type": "ping", "request_id": rid}):
+        raise HTTPException(503, "MQTT publish failed")
+    gateway.pings[device_id] = {"request_id": rid, "sent_ts": now_iso(), "ack_ts": None}
+    await log_event("info", f"{dev_label(device_id)}: wysłano polecenie testowe (ping)", {"user": user["email"]}, device_id)
+    return gateway.pings[device_id]
 
 
 @api.get("/farms/compare")
@@ -1923,7 +2000,8 @@ async def get_alarm_settings(client_id: Optional[str] = None, user: dict = Depen
     cfg = await db.alarm_settings.find_one({"_id": cid}) or {}
     sent = await db.alarm_notifications.find({"client_id": cid}, {"_id": 0}).sort("ts", -1).to_list(10)
     return {"client_id": cid, "enabled": cfg.get("enabled", True), "recipients": cfg.get("recipients", []),
-            "email_configured": notify.email_configured(), "sms_configured": notify.sms_configured(), "reminder_min": ALARM_REMIND_S // 60, "recent": sent}
+            "email_configured": notify.email_configured(), "sms_configured": notify.sms_configured(), "reminder_min": ALARM_REMIND_S // 60,
+            "offline_min": cfg.get("offline_min", OFFLINE_ALARM_MIN), "recent": sent}
 
 
 @api.put("/alarm-settings")
@@ -1936,7 +2014,8 @@ async def put_alarm_settings(body: AlarmSettingsIn, client_id: Optional[str] = N
             raise HTTPException(422, f"invalid {r.type}: {r.value}")
         if not any(x["type"] == r.type and x["value"] == v for x in recs):
             recs.append({"type": r.type, "value": v})
-    await db.alarm_settings.update_one({"_id": cid}, {"$set": {"enabled": body.enabled, "recipients": recs}}, upsert=True)
+    upd = {"enabled": body.enabled, "recipients": recs, **({"offline_min": body.offline_min} if body.offline_min is not None else {})}
+    await db.alarm_settings.update_one({"_id": cid}, {"$set": upd}, upsert=True)
     await log_event("info", f"Powiadomienia o alarmach {'WŁ.' if body.enabled else 'WYŁ.'}, odbiorcy: {len(recs)}",
                     {"user": user["email"]}, client_id=cid)
     return await get_alarm_settings(cid, user)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { X, CheckCircle2, XCircle } from "lucide-react";
+import { X, CheckCircle2, XCircle, Send, Clock } from "lucide-react";
+import { toast } from "sonner";
 import { API } from "@/api";
 
 const ago = (ts) => (ts ? Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 1000)) : null);
@@ -18,7 +19,12 @@ export const MqttDebugPanel = ({ t, deviceId, onClose }) => {
     const i = setInterval(load, 2000);
     return () => clearInterval(i);
   }, [deviceId]);
-  const m = d?.last_message, c = d?.last_command;
+  const m = d?.last_message, c = d?.last_command, p = d?.ping;
+  const ping = async () => {
+    try { const { data } = await axios.post(`${API}/devices/${deviceId}/ping`); setD({ ...d, ping: data }); }
+    catch (e) { toast.error(t.saveFailed); }
+  };
+  const ackS = p?.ack_ts ? ((new Date(p.ack_ts) - new Date(p.sent_ts)) / 1000).toFixed(1).replace(".", ",") : null;
   return (
     <div className="reg-cell fade-in" style={{ padding: 10, fontSize: 11, marginTop: 6 }} data-testid={`mqtt-debug-${deviceId}`}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -37,6 +43,16 @@ export const MqttDebugPanel = ({ t, deviceId, onClose }) => {
           <div style={{ color: "var(--muted)" }}>{ago(m.ts)} s {t.mqttAgo} · {m.size} B</div>
           <Box testid="mqtt-debug-payload">{pretty(m.payload)}</Box>
         </>)}
+        <div className="flex items-center gap-2" style={{ marginTop: 10 }}>
+          <button className="action-btn" onClick={ping} data-testid="mqtt-ping-btn" style={{ padding: "7px 12px", fontSize: 12, color: "var(--primary)", borderColor: "var(--primary)" }}>
+            <Send size={12} /> {t.pingSend}</button>
+          {p && <span data-testid="mqtt-ping-result" className="flex items-center gap-1"
+            style={{ color: ackS ? "var(--green)" : ago(p.sent_ts) > 15 ? "var(--accent)" : "var(--muted)" }}>
+            {ackS ? <><CheckCircle2 size={12} /> {t.pingAck.replace("{s}", ackS)}</>
+              : ago(p.sent_ts) > 15 ? <><XCircle size={12} /> {t.pingNoAck}</> : <><Clock size={12} /> {t.pingWait}</>}
+          </span>}
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 10, marginTop: 2 }}>{t.pingHint}</div>
         <div style={{ marginTop: 8, fontWeight: 700 }}>{t.mqttLastCmd}</div>
         {!c ? <div style={{ color: "var(--muted)" }}>{t.mqttNoCmd}</div> : (<>
           <div style={{ color: "var(--muted)" }}>{ago(c.ts)} s {t.mqttAgo} · {c.ok ? t.mqttSent : t.mqttSendFail}</div>

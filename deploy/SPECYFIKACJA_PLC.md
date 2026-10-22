@@ -31,6 +31,7 @@ Brak wiadomości przez ponad 10 s = sterownik pokazany jako **offline**.
 ```json
 {
   "model": "Fatek FBs-M",
+  "ack": "5075339505334838",
   "chambers": [
     {
       "id": 0,
@@ -55,6 +56,7 @@ Brak wiadomości przez ponad 10 s = sterownik pokazany jako **offline**.
 
 | Pole | Typ / jednostka | Wymagane | Opis |
 |---|---|---|---|
+| `ack` | tekst | nie** | `request_id` ostatnio odebranego polecenia `ping` (test połączenia) |
 | `chambers` | lista | TAK | dokładnie tyle elementów, ile komór ma sterownik; `id` = 0, 1, 2 … |
 | `on` | bool | TAK | komora pracuje |
 | `heating` | bool | TAK | grzanie załączone |
@@ -74,6 +76,8 @@ Brak wiadomości przez ponad 10 s = sterownik pokazany jako **offline**.
 
 \* Wymagane do zużycia dziennego, kosztów rzutów i raportów. Liczniki **nie mogą się zerować** (po restarcie sterownika muszą wrócić do ostatniej wartości – zapis w pamięci podtrzymywanej).
 
+\*\* Wymagane do testu połączenia z panelu (przycisk „Wyślij test” w Podglądzie MQTT).
+
 Liczby jako liczby JSON (nie tekst). Wiadomość z błędnym formatem lub złą liczbą komór jest **odrzucana**.
 
 ## 4. Polecenia – sterownik subskrybuje `<prefix>/<device_id>/command`
@@ -82,6 +86,7 @@ Liczby jako liczby JSON (nie tekst). Wiadomość z błędnym formatem lub złą 
 {"type": "set_setpoint", "chamber": 0, "value": 22.5, "request_id": "a1b2..."}
 {"type": "set_mode",     "chamber": 0, "value": "manual", "request_id": "..."}
 {"type": "set_vent",     "chamber": 0, "value": {"curtain_left": 60, "curtain_right": 60, "chimney": 25}, "request_id": "..."}
+{"type": "ping", "request_id": "5075339505334838"}
 ```
 
 | `type` | `value` | Działanie |
@@ -89,6 +94,7 @@ Liczby jako liczby JSON (nie tekst). Wiadomość z błędnym formatem lub złą 
 | `set_setpoint` | liczba 5–35 °C | nowa nastawa temperatury |
 | `set_mode` | `"auto"` / `"manual"` | zmiana trybu |
 | `set_vent` | obiekt z 1–3 polami, % **otwarcia** 0–100 | pozycje w trybie ręcznym (może przyjść tylko jedno pole) |
+| `ping` | – (bez `chamber`) | test połączenia: wpisz `request_id` do pola `"ack"` i wyślij stan od razu |
 
 Po wykonaniu polecenia sterownik ma po prostu wysłać kolejny stan z nowymi wartościami (osobne potwierdzenie nie jest potrzebne).
 Serwer codziennie o ustawionej godzinie (domyślnie 00:00) wysyła `set_mode: "auto"` do komór w trybie ręcznym.
@@ -97,4 +103,8 @@ Serwer codziennie o ustawionej godzinie (domyślnie 00:00) wysyła `set_mode: "a
 
 1. Podłącz się do brokera danymi sterownika i opublikuj przykładowy stan.
 2. W panelu sterownik zmieni status na **online**, a wartości pojawią się w komorach.
-3. Zmień nastawę w panelu → sterownik musi odebrać `set_setpoint` i odesłać nowy `setpoint` w stanie.
+3. W panelu: Ustawienia → Sterowniki → ikona aktywności (Podgląd MQTT) → **Wyślij test**. Panel pokaże „Sterownik potwierdził odbiór po X s”, gdy w stanie przyjdzie `"ack"` z tym samym `request_id`.
+4. Podgląd MQTT pokazuje też ostatnią wiadomość od sterownika i powód odrzucenia (np. zła liczba komór, brak pola).
+5. Zmień nastawę w panelu → sterownik musi odebrać `set_setpoint` i odesłać nowy `setpoint` w stanie.
+
+Brak danych przez ustawiony czas (domyślnie 5 min) powoduje alarm „brak połączenia” do odbiorców alarmów klienta.
