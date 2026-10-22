@@ -1688,6 +1688,32 @@ async def cycle_rows(device_id: str, chamber: Optional[int]) -> list:
     return out
 
 
+def avg(vals: list) -> Optional[float]:
+    vals = [v for v in vals if v is not None]
+    return sum(vals) / len(vals) if vals else None
+
+
+async def chamber_compare(device_id: str) -> list:
+    d, ctx = DEVICES[device_id], await cycle_ctx(device_id)
+    done = await db.cycles.find({"device_id": device_id, "end": {"$ne": None}}).to_list(5000)
+    views = [await cycle_view(c, ctx) for c in done]
+    out = []
+    for ch in range(d["chambers"]):
+        vs = [v for v in views if v["chamber"] == ch]
+        cph, wph = avg([v["cost_per_head"] for v in vs]), avg([v["water_per_head_l"] for v in vs])
+        out.append({"chamber": ch, "name": ch_name(device_id, ch), "cycles": len(vs),
+                    "cost_per_head": round(cph, 3) if cph is not None else None,
+                    "water_per_head_l": round(wph, 2) if wph is not None else None,
+                    "days": round(avg([v["days"] for v in vs]), 1) if vs else None})
+    return out
+
+
+@api.get("/devices/{device_id}/cycles/compare")
+async def cycles_compare(device_id: str, user: dict = Depends(require("viewer"))):
+    device_or_404(user, device_id)
+    return {"chambers": await chamber_compare(device_id)}
+
+
 @api.get("/devices/{device_id}/cycles/export")
 async def cycles_export(device_id: str, fmt: str = "xlsx", chamber: Optional[int] = None, user: dict = Depends(require("viewer"))):
     d = device_or_404(user, device_id)
@@ -1699,7 +1725,11 @@ async def cycles_export(device_id: str, fmt: str = "xlsx", chamber: Optional[int
         return file_response(("\ufeff" + txt + "\n").encode(), fname + ".csv", "text/csv; charset=utf-8")
     widths = {"A": 18, "B": 12, "C": 12, "D": 6, "E": 8, "F": 10, "G": 16, "H": 12, "I": 22, "J": 16, "K": 14, "L": 14,
               "M": 15, "N": 17, "O": 26, "P": 26}
-    data = await asyncio.to_thread(xlsx_bytes, [("Chowy", [CYCLE_HEAD] + rows, widths)], await client_logo(d["client_id"]))
+    cmp = [["Komora", "Zakończone rzuty", "Śr. koszt na sztukę zł", "Śr. woda na sztukę l", "Śr. długość rzutu dni"]]
+    cmp += [[x["name"], x["cycles"], x["cost_per_head"], x["water_per_head_l"], x["days"]] for x in await chamber_compare(device_id)]
+    data = await asyncio.to_thread(xlsx_bytes, [("Chowy", [CYCLE_HEAD] + rows, widths),
+                                                ("Porównanie komór", cmp, {"A": 20, "B": 17, "C": 22, "D": 20, "E": 21})],
+                                   await client_logo(d["client_id"]))
     return file_response(data, fname + ".xlsx", XLSX_MIME)
 
 

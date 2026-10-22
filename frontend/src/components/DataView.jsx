@@ -1,5 +1,6 @@
 import { chName } from "@/api";
 import { UsageRangeCard } from "@/components/UsageRangeCard";
+import { ChamberCompareCard } from "@/components/ChamberCompareCard";
 import { useState, memo, useMemo } from "react";
 import { Zap, Droplet } from "lucide-react";
 import { DailyUsage, CsvExport } from "@/components/UsageExport";
@@ -100,6 +101,7 @@ export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events
       {plant && <PlantTile plant={plant} t={t} />}
       <DailyUsage t={t} deviceId={deviceId} />
       {dev && <UsageRangeCard t={t} dev={dev} />}
+      {dev && <ChamberCompareCard key={dev.device_id} t={t} dev={dev} />}
       <div className="font-head" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>{t.history} · {chName(t, dev, ch?.id ?? 0)} · 3 {t.hours}</div>
       <Chart t={t} title={t.historyTemp} data={data} lines={[["temp", "var(--text)", t.temp]]} testid="chart-temp" />
       <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "var(--c-water)", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
