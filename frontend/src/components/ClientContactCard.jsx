@@ -21,8 +21,10 @@ export const ClientContactCard = ({ t, clientId, clientName }) => {
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>{t.myContactHint}</div>
       <div className="grid gap-2 sm:grid-cols-2">
         {FIELDS.map(([k, ph, max]) => (
-          <input key={k} className="num-input" style={{ fontSize: 13 }} placeholder={ph} value={f[k] || ""} maxLength={max}
-            onChange={(e) => setF({ ...f, [k]: e.target.value })} data-testid={`client-contact-${k}`} />
+          <label key={k} style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 4 }}>{t[`field_${k}`]}
+            <input className="num-input" style={{ fontSize: 13 }} placeholder={ph} value={f[k] || ""} maxLength={max}
+              onChange={(e) => setF({ ...f, [k]: e.target.value })} data-testid={`client-contact-${k}`} />
+          </label>
         ))}
       </div>
       <button className="action-btn" onClick={save} data-testid="client-contact-save" style={{ width: "100%", padding: 9, marginTop: 10, fontSize: 13 }}>{t.save}</button>

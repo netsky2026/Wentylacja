@@ -5,7 +5,7 @@ const fmt = (v) => v.toFixed(3).replace(".", ",");
 
 export const CycleCostChart = ({ t, rows }) => {
   const data = rows.filter((c) => c.cost_per_head != null).sort((a, b) => a.start.localeCompare(b.start))
-    .map((c) => ({ id: c.id, label: c.start.slice(2), v: c.cost_per_head, running: !c.end }));
+    .map((c) => ({ id: c.id, label: c.start.slice(2).split("-").reverse().join("."), v: c.cost_per_head, running: !c.end }));
   if (data.length === 0) return null;
   const done = data.filter((d) => !d.running);
   const best = done.length ? done.reduce((a, b) => (b.v < a.v ? b : a)) : null;
@@ -18,9 +18,9 @@ export const CycleCostChart = ({ t, rows }) => {
       </div>
       <div style={{ width: "100%", height: 170 }}>
         <ResponsiveContainer>
-          <BarChart data={data} margin={{ top: 16, right: 4, left: -18, bottom: 0 }}>
+          <BarChart data={data} margin={{ top: 16, right: 4, left: 0, bottom: 0 }}>
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={44} />
+            <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={46} tickFormatter={(v) => String(+v.toFixed(3)).replace(".", ",")} />
             <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", fontSize: 12 }}
               formatter={(v, _n, p) => [`${fmt(v)} zł${p.payload.running ? ` (${t.costChartRunning})` : ""}`, t.costPerHead]} />
             <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive>

@@ -134,3 +134,5 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Stawki za media (zl/kWh, zl/m3) per klient (GET/PUT /api/rates); koszt rzutu per komora: prad dzienny dzielony po rowno na komory z trwajacym rzutem; koszty w CycleCard, eksporcie chowow, raporcie zakresu/miesiecznym (Excel + tresc maila).
 - Dodano /app/DLA_PROGRAMISTY.md – dokumentacja techniczna dla programisty (stos, uruchomienie, env, MQTT, baza, endpointy, wdrozenie, backup, backlog).
 - Dane kontaktowe klienta (clients.contact: phone/email/www/adres) edytowane przez superadmina w edytorze brandingu klienta; widoczne na ekranie logowania klienta (?klient=slug).
+- Admin klienta edytuje dane kontaktowe (GET/PUT /api/client-contact, karta ClientContactCard; superadmin – ta sama karta po wybraniu sterownika klienta; usunieto duplikat z FleetCard).
+- Wykres kosztu na sztuke kolejnych rzutow (CycleCostChart w historii chowow), najtanszy zakonczony wyrozniony, trwajacy jasniejszy.

@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 28 tested (A) the client-admin contact editor (/api/client-contact, the Settings card and the contact block on the branded login screen) and (B) the cost-per-head chart for batches (rzuty). Backend: 13 of 13 pytest cases pass. They cover RBAC, superadmin client_id scoping, validation (email, phone, website, address length), the foreign-Origin guard, PATCH /api/clients contact, public branding contact and cost_per_head math with synthetic meter data. Frontend at 390px: everything passes. Client admin saves, the values survive a reload and they show up on /?klient=kowalski. The superadmin card follows the selected client's device. The chart renders, highlights the cheapest finished batch and fades the running one. The chart is hidden when a chamber has no cost data. All test data has been cleaned up. Kowalski contact and rates are restored and site data was not touched.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CycleCostChart Y axis", "issue": "At 390px the Y-axis tick labels are cut off on the left (shown as '.18', '135', '.09', '045' instead of 0.18 / 0.135 ...). Caused by margin left:-18 together with YAxis width 44. The axis also uses '.' as the decimal separator while the bar labels use ','.", "selector": "[data-testid='cycle-cost-chart'] .recharts-yAxis", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Superadmin Settings", "issue": "The same contact data has two editors on one screen: FleetCard brand-contact-* and client-contact-card. Their state is not synced, so saving in one leaves the other stale, and saving the stale one later overwrites the newer values.", "affected_selectors": ["[data-testid^='brand-contact-save-']", "[data-testid='client-contact-save']"]}
+    ],
+    "design_issues": [
+      {"screen": "Settings > Dane kontaktowe card", "issues": ["The inputs have only placeholders and no labels. Once filled, it is not clear which field is which (website vs. address).", "X-axis labels on the cost chart use yy-mm-dd ('26-09-15'), which is ambiguous for Polish users. Consider dd.mm or dd.mm.yy."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration28_client_contact_cost_chart.py", "/app/test_reports/pytest/pytest_it28.xml"],
+  "action_items": [
+    "Fix the cut-off Y-axis ticks in CycleCostChart on mobile (raise the left margin to about 0 or widen the YAxis, and use a tickFormatter with a Polish comma).",
+    "Optional: sync or reload FleetCard contact after a ClientContactCard save (or the other way round), or drop the duplicate editor for the selected client.",
+    "Optional: add labels or icons to the contact inputs and use a dd.mm date format on the chart's X axis."
+  ],
+  "critical_code_review_comments": [
+    "Mutations are protected by an Origin guard. No X-CSRF-Token check exists in server.py, so the credential notes mentioning the CSRF header are misleading (harmless).",
+    "For a client admin, PUT /api/client-contact?client_id=<other> silently ignores client_id and writes to the admin's own client. This is safe, but the client could return 403 for clarity.",
+    "PUT /client-contact overwrites all four fields. The frontend always sends all of them, so this is fine."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration28_client_contact_cost_chart.py", "/app/memory/test_credentials.md"],
+  "success_rate": {"backend": "100%", "frontend": "100% functional (1 low-priority visual bug)"},
+  "test_credentials": "Created persistent client admin kowalski.admin@kowalski.pl / KowalskiAdm!2026 (Kowalski) and added it to /app/memory/test_credentials.md",
+  "seed_data_creation": "Test cycles in kowalski-a chamber 2 and synthetic meter_daily rows (test_tag it28) were created and then removed. Run with KEEP_SEED=1 to keep them for UI checks.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Server date is 2026-10-22. The it28 test asserts that kowalski-a chamber 2 has no cycles; with KEEP_SEED=1 it leaves 3 cycles (finished 09-01..09-10 and 09-15..09-25, running from 10-01) for UI checks. The cheapest batch should be 26-09-15 at 0,089 zł. The root URL shows a welcome screen with a ZALOGUJ button before the login form; /?klient=kowalski goes straight to the login form."
+}
