@@ -11,6 +11,7 @@ import { ClientContactCard } from "@/components/ClientContactCard";
 import { FleetCard } from "@/components/FleetCard";
 import { ChamberNameEdit } from "@/components/ChamberNameEdit";
 import { SiteCard } from "@/components/SiteCard";
+import { PlcScaleCard } from "@/components/PlcScaleCard";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold, dev, canRename, onRenamed }) => {
@@ -98,6 +99,7 @@ export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, not
       </>}
       {user.role === "superadmin" && <>
         <BrokerForm t={t} config={config} onSaved={onConfigSaved} />
+        <PlcScaleCard t={t} />
         <SiteCard t={t} site={site} reloadSite={reloadSite} />
       </>}
       <InstallCard t={t} />

@@ -328,6 +328,36 @@ def to_flag(v) -> bool:
     return bool(v) and not (isinstance(v, float) and not math.isfinite(v))
 
 
+SCALE_FIELDS = NUM_FIELDS + CH_OPT_FIELDS + ("power_kw", "power_kwh")
+PLC_SCALE: dict = {f: (10 if f in ("temp", "setpoint") else 1) for f in SCALE_FIELDS}
+
+
+def unscale(p: dict) -> dict:
+    """Real PLCs send integers ×10/×100 – divide per global PLC_SCALE."""
+    p = copy.deepcopy(p)
+    div = lambda v, f: v / PLC_SCALE[f] if _num(v) else v
+    for ch in p.get("chambers") or []:
+        if isinstance(ch, dict):
+            for f in NUM_FIELDS + CH_OPT_FIELDS:
+                ch[f] = div(ch.get(f), f)
+            if isinstance(ch.get("manual"), dict):
+                for f in VENT_FIELDS:
+                    ch["manual"][f] = div(ch["manual"].get(f), f)
+    if isinstance(p.get("plant"), dict):
+        for f in PLANT_FIELDS:
+            p["plant"][f] = div(p["plant"].get(f), f)
+    return p
+
+
+def scale_cmd(cmd: dict) -> dict:
+    v = cmd.get("value")
+    if cmd["type"] == "set_setpoint":
+        return {**cmd, "value": round(v * PLC_SCALE["setpoint"])}
+    if cmd["type"] == "set_vent":
+        return {**cmd, "value": {k: round(x * PLC_SCALE[k]) for k, x in v.items()}}
+    return cmd
+
+
 def sanitize_state(p, device_id: str) -> Optional[dict]:
     """Accept only well-formed numeric state with exactly the device's chambers; drop anything else."""
     n = DEVICES[device_id]["chambers"]
@@ -484,6 +514,8 @@ class Gateway:
             if err:
                 rec["error"] = err
                 return
+        elif isinstance(data, dict) and not DEVICES[device_id]["simulated"]:
+            data = unscale(data)
         ping = self.pings.get(device_id)
         if ping and not ping.get("ack_ts") and isinstance(data, dict) and data.get("ack") == ping["request_id"]:
             ping["ack_ts"] = now_iso()
@@ -872,6 +904,7 @@ async def lifespan(app: FastAPI):
                                  partialFilterExpression={"active": True})
     await load_broker()
     await load_registry()
+    PLC_SCALE.update((await db.settings.find_one({"_id": "plc_scale"}) or {}).get("values", {}))
     await db.plc_history.create_index([("device_id", 1), ("ts", 1)])
     await db.plc_plant_history.create_index([("device_id", 1), ("ts", 1)])
     await db.devices.create_index("device_id", unique=True)
@@ -1429,6 +1462,21 @@ async def put_auto_return(body: AutoReturnIn, client_id: Optional[str] = None, u
     return {"time": body.time}
 
 
+@api.get("/plc-scale")
+async def get_plc_scale(user: dict = Depends(require("superadmin"))):
+    return PLC_SCALE
+
+
+@api.put("/plc-scale")
+async def put_plc_scale(body: dict, user: dict = Depends(require("superadmin"))):
+    if set(body) - set(SCALE_FIELDS) or any(type(v) is not int or v not in (1, 10, 100, 1000) for v in body.values()):
+        raise HTTPException(422, "Dozwolone dzielniki: 1, 10, 100, 1000")
+    PLC_SCALE.update(body)
+    await db.settings.update_one({"_id": "plc_scale"}, {"$set": {"values": PLC_SCALE}}, upsert=True)
+    await log_event("info", "Zmieniono przeliczanie wartości ze sterowników", {"user": user["email"], **body})
+    return PLC_SCALE
+
+
 @api.post("/admin/auto-reset")
 async def admin_auto_reset(user: dict = Depends(require("superadmin"))):
     await reset_manual_to_auto()
@@ -1450,6 +1498,8 @@ async def device_command(device_id: str, cmd: CommandIn, user: dict = Depends(re
                 k not in VENT_FIELDS or not _num(x) or not 0 <= x <= 100 for k, x in v.items()):
             raise HTTPException(422, "invalid vent values")
     body = {**cmd.model_dump(), "request_id": uuid.uuid4().hex}
+    if not d["simulated"]:
+        body = scale_cmd(body)
     if not gateway.publish_command(device_id, body):
         raise HTTPException(503, "MQTT publish failed")
     name = f"{d['name']} – {ch_name(device_id, cmd.chamber)}"

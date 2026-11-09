@@ -153,3 +153,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - POST /api/devices/{id}/mqtt-send (walidacja JSON, temat domyślnie = command_topic, blokada tematów $/#/+), GET /api/devices/{id}/mqtt-sent (ostatnie 20, kolekcja mqtt_sent)
 - MqttSendBox.jsx w MqttDebugPanel: pole tematu, JSON, potwierdzenie, historia z ponownym wysłaniem
 - Technik: Fatek oczekuje wartości integer (np. setpoint_x10 = 220). Format komend sterowania nadal do ustalenia (BLOCKED).
+- Globalne przeliczanie wartości ze sterowników (PlcScaleCard, GET/PUT /api/plc-scale, db.settings plc_scale). Domyślnie temp i setpoint ÷10. Tylko prawdziwe sterowniki (nie symulatory, nie format Fatek "d"). Komendy set_setpoint/set_vent mnożone i zaokrąglane do integer.
