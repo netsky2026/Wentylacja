@@ -343,6 +343,19 @@ def sanitize_state(p, device_id: str) -> Optional[dict]:
             "plant": {k: float(plant_in[k]) for k in PLANT_FIELDS if _num(plant_in.get(k))}, "ts": now_iso()}
 
 
+def json_error_pl(e: json.JSONDecodeError) -> str:
+    m = e.msg
+    if m.startswith("Expecting ',' delimiter") or m.startswith("Expecting value") and e.pos >= len(e.doc) - 1:
+        return "wiadomość urwana albo brak zamykającego nawiasu } lub ]" if e.pos >= len(e.doc) - 1 else "brak przecinka między polami"
+    if m.startswith("Expecting property name"):
+        return "nazwy pól muszą być w cudzysłowach \"…\" (lub zbędny przecinek przed })"
+    if m.startswith("Extra data"):
+        return "dodatkowe znaki po zamknięciu JSON (np. dwie wiadomości sklejone)"
+    if m.startswith("Invalid control character"):
+        return "niedozwolony znak sterujący (np. nowa linia w tekście)"
+    return m
+
+
 def state_error(p, device_id: str) -> str:
     """Human-readable reason why sanitize_state rejected a message (MQTT preview)."""
     n = DEVICES[device_id]["chambers"]
@@ -435,10 +448,16 @@ class Gateway:
         raw = msg.payload[:8192].decode("utf-8", "replace")
         rec = {"topic": msg.topic, "ts": now_iso(), "size": len(msg.payload), "payload": raw, "ok": False, "error": None}
         self.raw[device_id] = rec
+        body = msg.payload.replace(b"\x00", b"").strip()
         try:
-            data = json.loads(msg.payload.decode())
-        except Exception:
-            rec["error"] = "To nie jest poprawny JSON (UTF-8)"
+            data = json.loads(body.decode("utf-8"))
+        except UnicodeDecodeError:
+            rec["error"] = "To nie jest poprawny JSON – znaki spoza UTF-8"
+            return
+        except json.JSONDecodeError as e:
+            tail = body[-40:].decode("utf-8", "replace")
+            rec["error"] = (f"To nie jest poprawny JSON – {json_error_pl(e)} (znak {e.pos} z {len(body)}). "
+                            f"Koniec wiadomości: …{tail}")
             return
         if fatek.is_fatek(data):
             data, err = fatek.convert(data, device_id, DEVICES[device_id]["chambers"])
