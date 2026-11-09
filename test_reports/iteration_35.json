@@ -1,0 +1,20 @@
+{
+  "summary": "Backend-only test of Gateway._on_message NUL/whitespace stripping and Polish JSON error messages (json_error_pl), via real MQTT publish to broker.hivemq.com on a temporary non-simulated 3-chamber device (client Kowalski). New suite 12/12 passed; iteration34 Fatek regression suite 9/9 passed. Test devices deleted (only kowalski-a, chlodnia-01 remain).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "json_error_pl (MQTT preview)", "issue": "Two common truncation cases still return English text: message cut inside a string -> 'Unterminated string starting at'; and 'Expecting value' in the middle of the message (e.g. '{\"a\": tr') -> 'Expecting value'. Add Polish mappings (e.g. 'niezamknięty cudzysłów – wiadomość urwana?', 'brak lub nieprawidłowa wartość')."},
+      {"endpoint": "json_error_pl", "issue": "An empty or NUL-only payload (body '' after stripping) is reported as 'wiadomość urwana…'. A clearer message would be 'pusta wiadomość'. Also '{\"a\": }' is classified as 'urwana' because of the pos >= len-1 check. Cosmetic."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iteration35_json_nul_errors.py", "/app/test_reports/pytest/pytest_iter35.xml", "/app/backend/tests/test_iteration34_fatek_cache_fixes.py"],
+  "action_items": ["Optional: Polish mappings for 'Unterminated string' / mid-document 'Expecting value', plus a separate message for an empty payload"],
+  "critical_code_review_comments": ["Operator precedence in json_error_pl line 348 ('A or B and C') works but is hard to read; add parentheses", "server.py is ~2128 lines; split it into modules (gateway, json/state validation, routes)"],
+  "updated_files": ["/app/backend/tests/test_iteration35_json_nul_errors.py"],
+  "success_rate": {"backend": "100%", "frontend": "not tested"},
+  "seed_data_creation": "Temporary device nul35xxxx (client 6ad7dcc3261e5ba3c23315b7) was created and deleted in the fixture teardown",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run tests with '-n 0' (pytest.ini adds xdist). Results checked: NUL padding (50 bytes and padding to ~1058 B), CRLF/space around the message and NUL inside are all accepted (ok true, online, values correct). Missing '}' gives an error with 'wiadomość urwana…', the position and 'Koniec wiadomości: …<last 40 chars>' (no NUL). Concatenated -> 'dodatkowe znaki'. Unquoted keys -> 'cudzysłowach'. Non-UTF8 \\xff\\xfe -> 'znaki spoza UTF-8'. Missing comma -> 'brak przecinka'. Fatek {d:...} plus NUL accepted. kowalski-a online."
+}

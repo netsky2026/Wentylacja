@@ -344,9 +344,15 @@ def sanitize_state(p, device_id: str) -> Optional[dict]:
 
 
 def json_error_pl(e: json.JSONDecodeError) -> str:
-    m = e.msg
-    if m.startswith("Expecting ',' delimiter") or m.startswith("Expecting value") and e.pos >= len(e.doc) - 1:
-        return "wiadomość urwana albo brak zamykającego nawiasu } lub ]" if e.pos >= len(e.doc) - 1 else "brak przecinka między polami"
+    m, end = e.msg, e.pos >= len(e.doc.rstrip()) - 1
+    if not e.doc.strip():
+        return "pusta wiadomość"
+    if m.startswith("Unterminated string"):
+        return "niezamknięty cudzysłów – wiadomość urwana?"
+    if m.startswith(("Expecting ',' delimiter", "Expecting ':' delimiter")):
+        return "wiadomość urwana albo brak zamykającego nawiasu } lub ]" if end else "brak przecinka lub dwukropka między polami"
+    if m.startswith("Expecting value"):
+        return "wiadomość urwana" if end else "brak lub nieprawidłowa wartość pola (np. true/false/null małymi literami, liczba bez cudzysłowu)"
     if m.startswith("Expecting property name"):
         return "nazwy pól muszą być w cudzysłowach \"…\" (lub zbędny przecinek przed })"
     if m.startswith("Extra data"):
