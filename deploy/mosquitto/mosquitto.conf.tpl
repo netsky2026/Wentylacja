@@ -13,3 +13,6 @@ listener 1883 0.0.0.0
 listener 8883 0.0.0.0
 certfile /mosquitto/certs/server.crt
 keyfile /mosquitto/certs/server.key
+# minimum TLS 1.2 (TLS 1.3 also accepted); TLS 1.2 ciphers for RSA certificate, incl. non-PFS for embedded PLC stacks
+tls_version tlsv1.2
+ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256

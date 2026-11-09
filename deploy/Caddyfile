@@ -1,3 +1,8 @@
+{
+	# RSA certificate – compatible with PLC TLS 1.2 stacks (also used by Mosquitto on 8883)
+	key_type rsa2048
+}
+
 {$DOMAIN} {
 	encode gzip
 	handle /api/* {
