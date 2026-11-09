@@ -1,0 +1,32 @@
+{
+  "summary": "Tested the Fatek native MQTT format (backend/fatek.py + Gateway._on_message) over the public HiveMQ broker, end to end. On a fresh device all 9 pytest tests passed: DataItem0 rejected with 'Fatek: brak tagów… Nieznane tagi: DataItem0' and the device offline; split messages merged (first rejected with the missing tags listed, second accepted); a full message every 2 s made the device online with temps 19.4/21.4/22.9, setpoints 20/22/24, chamber 2 manual and plant power_kwh 167.2; a short array was rejected with 'mają mniej wartości niż komór (3)'; string values were rejected with 'muszą zawierać liczby'. Regression: kowalski-a standard format is still online and its ping is acked. The UI FleetCard MQTT panel shows the rejection text and 'offline', and 'Przyjęta – format poprawny' plus 'online' for full native messages. Found a real bug: the per-device merge cache (fatek._cache) never expires and is not cleared when a device is deleted. Once a full state has been cached, any later Fatek-format message is shown as 'Przyjęta' and keeps the device online with frozen stale values, even one with only unknown tags such as {\"d\":{\"DataItem0\":[4]}}. This also happens after the device is deleted and recreated with the same device_id. Test devices were deleted afterwards.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "MQTT <prefix>/<device>/state (fatek.convert)", "issue": "Stale merge cache: once all required tags are in fatek._cache, any later message in {\"d\":{...}} format is accepted (ok=true), refreshes last_seen (device ONLINE) and re-broadcasts the old cached values. This includes messages that contain no known tags at all (e.g. {\"d\":{\"DataItem0\":[4]}}). A PLC that changes its tag naming or sends only garbage or heartbeats therefore looks healthy and online with frozen temperatures, so offline monitoring and alarms are defeated. Reproduced in the UI: DataItem0 shown as 'Przyjęta – format poprawny', Sterownik: online.", "priority": "HIGH"},
+      {"endpoint": "DELETE /api/devices/{id}", "issue": "fatek._cache[device_id] and gateway.raw/pings are not cleared on delete. Reproduced: deleted 'fatektest', recreated it with the same id, published only {\"d\":{\"DataItem0\":[4]}} -> last_message.ok=true and online=true, using the old cached values. If the device is recreated with a different chamber count, the old arrays are also reused.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "fatek.convert", "issue": "Bad values are stored in the cache before later checks run: a rejected short array (temp:[20]) replaces the good cached temp. Every later partial message without temp is then rejected until the PLC sends a full temp array again. Suggestion: validate first and commit to the cache only when the message is accepted, or reject short arrays before caching."},
+      {"endpoint": "fatek.convert", "issue": "Cached optional tags (mode, on, heating, manual_*) keep their last value indefinitely, with no time-to-live and no per-tag timestamp."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iteration33_fatek_native.py", "/app/backend/tests/it33_fatek_ui_pub.py", "/app/test_reports/pytest/pytest_it33.xml"],
+  "action_items": [
+    "Only treat a Fatek message as accepted (ok=true, update last_seen and state) if it contains at least one known tag with valid values. A message with only unknown tags must be rejected with the 'Nieznane tagi' reason even when the cache is full.",
+    "Clear fatek._cache.pop(device_id) and gateway.raw/pings.pop(device_id) in delete_device. Also clear the cache in patch_device if the chamber count can change.",
+    "Validate the whole message first (numbers, array length >= chambers) and only then merge it into the cache, so a bad message cannot poison good cached values.",
+    "Optional: add a time-to-live for cached tags (e.g. drop tags not refreshed within N × offline interval) so the dashboard does not show frozen values."
+  ],
+  "critical_code_review_comments": [
+    "fatek.py: the module-level _cache dict is shared and has no lifecycle management (see action items).",
+    "server.py _on_message: the ping-ack check runs after the Fatek conversion, so a native Fatek PLC cannot ack a ping unless it sends the standard {\"ack\":...} JSON. That works because is_fatek requires 'd', but it should be documented for the PLC technician.",
+    "server.py is very large (>2000 lines) and should be split into modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration33_fatek_native.py", "/app/backend/tests/it33_fatek_ui_pub.py"],
+  "success_rate": {"backend": "100% of the requested scenarios on a fresh device (9/9); 2 HIGH stale-cache bugs found by exploratory testing", "frontend": "100%"},
+  "seed_data_creation": "Temporary devices fatektest<random>, fatektest and fatektestui (client Kowalski) were created and all deleted. Only kowalski-a and chlodnia-01 remain. Kowalski rates, the simulator and /api/site were not touched.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=... python -m pytest tests/test_iteration33_fatek_native.py -p no:xdist -o addopts='' -v (tests are order-dependent and use a random device id). After the fix, add a test: full message -> then a DataItem0-only message must be rejected; and delete + recreate the same id -> DataItem0 must be rejected. UI: Settings (nav-settings) -> device-mqtt-<id> -> mqtt-debug-result / mqtt-debug-status. The welcome page needs a click on 'ZALOGUJ' before the login form appears. Run publisher helpers with setsid ... < /dev/null & so the bash tool does not hang."
+}

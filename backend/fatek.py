@@ -6,6 +6,7 @@ Messages may carry only some tags – values are merged per device until a full 
 """
 import math
 import re
+import time
 
 CH_TAGS = ("temp", "setpoint", "humidity", "co2", "curtain_left", "curtain_right", "chimney", "water_lpm", "water_total_l",
            "on", "heating", "mode", "manual_curtain_left", "manual_curtain_right", "manual_chimney")
@@ -13,6 +14,11 @@ REQUIRED = ("temp", "setpoint", "humidity", "co2", "curtain_left", "curtain_righ
 PLANT_TAGS = {"power_kw": "power_kw", "power_kwh": "power_kwh", "plant_water_lpm": "water_lpm", "plant_water_total_l": "water_total_l"}
 SCALE_RX = re.compile(r"^(.*)_x(10|100|1000)$")
 _cache: dict = {}
+TTL_S = 60
+
+
+def forget(device_id: str):
+    _cache.pop(device_id, None)
 
 
 def is_fatek(p) -> bool:
@@ -31,8 +37,9 @@ def _vals(v, div):
 
 def convert(p: dict, device_id: str, n: int):
     """Returns (standard_state, None) or (None, error message in Polish)."""
-    cache = _cache.setdefault(device_id, {})
-    unknown, bad = [], []
+    now = time.time()
+    cache = {k: v for k, v in _cache.get(device_id, {}).items() if now - v[1] < TTL_S}
+    unknown, bad, short, fresh = [], [], [], {}
     for raw, v in p["d"].items():
         tag, div = str(raw).strip().lower(), 1
         m = SCALE_RX.match(tag)
@@ -44,10 +51,20 @@ def convert(p: dict, device_id: str, n: int):
         vals = _vals(v, div)
         if vals is None:
             bad.append(str(raw))
+        elif tag in CH_TAGS and len(vals) < n:
+            short.append(str(raw))
         else:
-            cache[tag] = vals
+            fresh[tag] = (vals, now)
     if bad:
         return None, f"Fatek: tagi {', '.join(bad)} muszą zawierać liczby"
+    if short:
+        return None, f"Fatek: tag(i) {', '.join(short)} mają mniej wartości niż komór ({n}) – jedna wartość na komorę"
+    if not fresh:
+        return None, (f"Fatek: brak znanych tagów (otrzymane: {', '.join(unknown) or '–'}). Nazwij DataItem jak pola "
+                      f"(np. temp_x10 = [komora0, komora1, …]).")
+    cache.update(fresh)
+    _cache[device_id] = cache
+    cache = {k: v[0] for k, v in cache.items()}
     missing = [t for t in REQUIRED if t not in cache]
     if missing:
         hint = f" Nieznane tagi: {', '.join(unknown)}." if unknown else ""

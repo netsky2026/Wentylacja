@@ -1356,6 +1356,9 @@ async def delete_device(device_id: str, user: dict = Depends(require("superadmin
     sims.sync()
     await db.devices.delete_one({"device_id": device_id})
     dynsec_remove_device(device_id)
+    fatek.forget(device_id)
+    for m in (gateway.raw, gateway.pings, gateway.last_cmd):
+        m.pop(device_id, None)
     for coll in ("device_thresholds", "plc_history", "plc_plant_history", "plc_events"):
         await db[coll].delete_many({"device_id": device_id})
     for k in [k for k in alarm_active if k.startswith(f"{device_id}:")]:
