@@ -314,6 +314,16 @@ def ch_name(device_id: str, cid: int) -> str:
     return d.get("chamber_names", {}).get(str(cid)) or f"Komora {cid + 1}"
 
 
+TRUE_WORDS = {"1", "true", "on", "tak", "yes", "manual", "man", "reczny", "ręczny"}
+
+
+def to_flag(v) -> bool:
+    """PLC-friendly boolean: true/false, 0/1, "0"/"1", "auto"/"manual"."""
+    if isinstance(v, str):
+        return v.strip().lower() in TRUE_WORDS
+    return bool(v) and not (isinstance(v, float) and not math.isfinite(v))
+
+
 def sanitize_state(p, device_id: str) -> Optional[dict]:
     """Accept only well-formed numeric state with exactly the device's chambers; drop anything else."""
     n = DEVICES[device_id]["chambers"]
@@ -325,8 +335,8 @@ def sanitize_state(p, device_id: str) -> Optional[dict]:
     chambers = []
     for ch in sorted(p["chambers"], key=lambda c: int(c["id"])):
         cid = int(ch["id"])
-        out = {"id": cid, "name": ch_name(device_id, cid), "on": bool(ch.get("on")), "heating": bool(ch.get("heating")),
-               "mode": "manual" if ch.get("mode") == "manual" else "auto"}
+        out = {"id": cid, "name": ch_name(device_id, cid), "on": to_flag(ch.get("on")), "heating": to_flag(ch.get("heating")),
+               "mode": "manual" if to_flag(ch.get("mode")) else "auto"}
         for k in NUM_FIELDS:
             if not _num(ch.get(k)):
                 return None

@@ -42,6 +42,7 @@ export const VentControl = ({ ch, t, send, autoReturn }) => {
               }}>{label}</button>
           ))}
         </div>
+        {!ch.on && <div data-testid={`chamber-${ch.id}-off-hint`} style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, textAlign: "center" }}>{t.chamberOffHint}</div>}
         {manual && autoReturn && <div data-testid={`chamber-${ch.id}-auto-return`} style={{ fontSize: 11, color: "var(--warn-text)", marginTop: 8, textAlign: "center" }}>{t.autoReturn.replace("{h}", autoReturn)}</div>}
       </div>
       {manual && ch.on && (
