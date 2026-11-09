@@ -148,3 +148,8 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Obsluga natywnego formatu Fatek MQTT {"d":{tag:[...]}} (backend/fatek.py): tagi = nazwy pol (+_x10/_x100/_x1000), tablice per komora, laczenie czesciowych wiadomosci (TTL 60 s), czyszczenie przy usunieciu sterownika. Instrukcja PLC pkt 4a.
 - Odczyt MQTT: usuwanie bajtow NUL/bialych znakow przed JSON (wypelnienie ASCII Fateka), polskie powody bledow JSON z pozycja i koncowka wiadomosci (json_error_pl).
 - to_flag(): on/heating/mode z PLC akceptuja true/false, 0/1, "0"/"1", auto/manual; podpowiedz w UI gdy komora on=0 (przelacznik trybu zablokowany).
+
+## 2026-06 – Panel MQTT: wysyłanie własnych wiadomości (superadmin)
+- POST /api/devices/{id}/mqtt-send (walidacja JSON, temat domyślnie = command_topic, blokada tematów $/#/+), GET /api/devices/{id}/mqtt-sent (ostatnie 20, kolekcja mqtt_sent)
+- MqttSendBox.jsx w MqttDebugPanel: pole tematu, JSON, potwierdzenie, historia z ponownym wysłaniem
+- Technik: Fatek oczekuje wartości integer (np. setpoint_x10 = 220). Format komend sterowania nadal do ustalenia (BLOCKED).

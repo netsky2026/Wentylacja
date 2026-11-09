@@ -1924,6 +1924,37 @@ async def mqtt_debug(device_id: str, user: dict = Depends(require("superadmin"))
             "ping": gateway.pings.get(device_id)}
 
 
+class RawMqttIn(BaseModel):
+    topic: str = Field(min_length=1, max_length=200, pattern=r"^[^$#+\s][^#+\s]*$")
+    payload: str = Field(min_length=1, max_length=8000)
+
+
+@api.post("/devices/{device_id}/mqtt-send")
+async def mqtt_send(device_id: str, body: RawMqttIn, user: dict = Depends(require("superadmin"))):
+    device_or_404(user, device_id)
+    try:
+        json.loads(body.payload)
+    except ValueError as e:
+        raise HTTPException(400, f"Niepoprawny JSON: {e}")
+    ok = gateway.mc.publish(body.topic, body.payload, qos=1).rc == mqtt.MQTT_ERR_SUCCESS
+    entry = {"device_id": device_id, "topic": body.topic, "payload": body.payload, "ts": now_iso(), "ok": ok, "user": user["email"]}
+    gateway.last_cmd[device_id] = {k: entry[k] for k in ("topic", "ts", "payload", "ok")}
+    await db.mqtt_sent.insert_one(dict(entry))
+    ids = [d["_id"] async for d in db.mqtt_sent.find({"device_id": device_id}, {"_id": 1}).sort("ts", -1).skip(20)]
+    if ids:
+        await db.mqtt_sent.delete_many({"_id": {"$in": ids}})
+    await log_event("info", f"{dev_label(device_id)}: ręczna wiadomość MQTT na {body.topic}", {"user": user["email"]}, device_id)
+    if not ok:
+        raise HTTPException(503, "MQTT publish failed")
+    return {k: entry[k] for k in ("topic", "payload", "ts", "ok")}
+
+
+@api.get("/devices/{device_id}/mqtt-sent")
+async def mqtt_sent(device_id: str, user: dict = Depends(require("superadmin"))):
+    device_or_404(user, device_id)
+    return [d async for d in db.mqtt_sent.find({"device_id": device_id}, {"_id": 0, "device_id": 0, "user": 0}).sort("ts", -1).limit(20)]
+
+
 @api.post("/devices/{device_id}/ping")
 async def ping_device(device_id: str, user: dict = Depends(require("superadmin"))):
     device_or_404(user, device_id)

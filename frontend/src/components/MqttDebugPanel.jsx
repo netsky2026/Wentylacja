@@ -3,6 +3,7 @@ import axios from "axios";
 import { X, CheckCircle2, XCircle, Send, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { API } from "@/api";
+import { MqttSendBox } from "@/components/MqttSendBox";
 
 const ago = (ts) => (ts ? Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 1000)) : null);
 const pretty = (s) => { try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return s; } };
@@ -58,6 +59,7 @@ export const MqttDebugPanel = ({ t, deviceId, onClose }) => {
           <div style={{ color: "var(--muted)" }}>{ago(c.ts)} s {t.mqttAgo} · {c.ok ? t.mqttSent : t.mqttSendFail}</div>
           <Box testid="mqtt-debug-command">{pretty(c.payload)}</Box>
         </>)}
+        <MqttSendBox t={t} deviceId={deviceId} defaultTopic={d.command_topic} />
       </>)}
     </div>
   );
