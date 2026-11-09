@@ -145,3 +145,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Ping z potwierdzeniem ack (POST /api/devices/{id}/ping, przycisk w Podgladzie MQTT; symulator potwierdza), specyfikacja PLC zaktualizowana.
 - conn_monitor: zdarzenia offline/online, alarm po offline_min (alarm_settings, domyslnie 5) do odbiorcow klienta + ADMIN_EMAIL, wiadomosc o przywroceniu.
 - PDF dla technika per sterownik (GET /api/devices/{id}/techsheet.pdf, superadmin, bez hasla; przycisk w FleetCard), reportlab + DejaVu.
+- Obsluga natywnego formatu Fatek MQTT {"d":{tag:[...]}} (backend/fatek.py): tagi = nazwy pol (+_x10/_x100/_x1000), tablice per komora, laczenie czesciowych wiadomosci (TTL 60 s), czyszczenie przy usunieciu sterownika. Instrukcja PLC pkt 4a.

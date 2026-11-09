@@ -86,6 +86,29 @@ Lista `chambers` musi zawierać **dokładnie tyle komór, ile ma sterownik** (`i
 
 **Liczniki narastające nie mogą się zerować** – po zaniku zasilania sterownik musi kontynuować od ostatniej wartości (pamięć podtrzymywana / retain). Brak danych przez 10 s = sterownik **offline** w panelu (wpis w dzienniku po 30 s); po ustawionym czasie (domyślnie 5 min) klient dostaje alarm.
 
+
+## 4a. Alternatywa: natywny format Fatek (`{"d": {...}}`)
+
+Serwer przyjmuje też standardowy format modułu MQTT Fatek: `{"d": {"<nazwa>": [wartości]}, "error": [], "ts": "..."}`.
+Wystarczy w konfiguracji publikacji nazwać pozycje danych (DataItem) **jak pola** i ustawić **liczbę rejestrów = liczba komór** (jedna wartość na komorę, kolejno komora 0, 1, 2 …).
+
+| Nazwa DataItem | Rejestry | Opis |
+|---|---|---|
+| `temp_x10` | N | temperatura × 10 (np. 194 = 19,4 °C) |
+| `setpoint_x10` | N | nastawa × 10 |
+| `humidity` | N | wilgotność % |
+| `co2` | N | CO₂ ppm |
+| `curtain_left`, `curtain_right`, `chimney` | N | % otwarcia 0–100 |
+| `mode` | N | 0 = AUTO, 1 = RĘCZNY |
+| `on`, `heating` | N | 0/1 (opcjonalne) |
+| `water_total_l` | N | licznik wody komory w litrach (opcjonalne) |
+| `power_kwh_x10` | 1 | licznik energii chlewni × 10 (opcjonalne) |
+| `power_kw_x100`, `plant_water_total_l` | 1 | moc chwilowa × 100, licznik wody chlewni (opcjonalne) |
+
+Końcówka `_x10` / `_x100` / `_x1000` = serwer dzieli wartość przez 10 / 100 / 1000 (bez końcówki – wartość bez zmian).
+Wymagane: temp, setpoint, humidity, co2, curtain_left, curtain_right, chimney. Pozycje mogą przychodzić w osobnych wiadomościach – serwer łączy je (wartości ważne 60 s).
+Przykład (3 komory): `{"d": {"temp_x10": [194, 214, 229], "setpoint_x10": [200, 220, 240], "humidity": [70, 71, 72], "co2": [1200, 1300, 1400], "curtain_left": [40, 40, 85], "curtain_right": [40, 40, 15], "chimney": [30, 30, 11], "mode": [0, 0, 1]}, "error": []}`
+
 ## 5. Odbieranie poleceń
 
 Sterownik subskrybuje `<prefix>/<device_id>/command`. Po wykonaniu polecenia wystarczy wysłać kolejny stan z nowymi wartościami (osobne potwierdzenie niepotrzebne – poza `ping`).
@@ -131,6 +154,7 @@ Uwagi:
 | „To nie jest poprawny JSON” | błąd składni – cudzysłowy, przecinki, kodowanie inne niż UTF-8 |
 | „Zła liczba komór: przysłano X, sterownik ma Y” | lista `chambers` musi mieć Y elementów – lub Marco Polo zmienia liczbę komór w panelu |
 | „Pola id komór muszą być liczbami 0–N” | numeracja komór od 0, bez przerw |
+| „Fatek: brak tagów: …” / „brak znanych tagów” | format natywny Fatek – DataItem trzeba nazwać jak w punkcie 4a |
 | „Komora id=…: brak lub nieprawidłowa wartość pól: …” | brak pola albo wartość jako tekst (`"21.5"` zamiast `21.5`) |
 | „Brak potwierdzenia po 15 s” po „Wyślij test” | sterownik nie subskrybuje tematu `command` albo nie odsyła `ack` |
 | Sterownik co chwilę offline | publikacja rzadziej niż co 10 s albo niestabilny internet |

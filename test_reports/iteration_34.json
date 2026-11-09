@@ -1,0 +1,20 @@
+{
+  "summary": "Backend-only retest of Fatek native MQTT format fixes (iteration_33 stale merge cache). New suite test_iteration34_fatek_cache_fixes.py published real messages via broker.hivemq.com to a TEST_ device (3 chambers): 9/9 passed. Verified: unknown-only message after cached full state rejected with 'Fatek: brak znanych tagów (otrzymane: DataItem0)' and device goes offline after ~14 s of only such messages; short array temp:[20] rejected without overwriting cache (subsequent co2-only message accepted with temps 19.4/21.4/22.9 and new co2); string values rejected; split messages merge; DELETE device clears fatek cache + mqtt-debug (recreate -> last_message null, offline, co2-only rejected with 'brak tagów: temp, setpoint, …'); 60 s TTL: co2-only after 62 s rejected listing all missing required tags; full message restores. Regression: full message online, temps 19.4/21.4/22.9, chamber 2 manual, power_kwh 167.2; kowalski-a standard format online + ping ack OK. Test device deleted (only kowalski-a, chlodnia-01 remain).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iteration34_fatek_cache_fixes.py", "/app/test_reports/pytest/it34.xml"],
+  "action_items": [
+    "Optional: update test_iteration33_fatek_native.py test_01 – it still asserts 'Fatek: brak tagów' for a DataItem0-only message on a fresh device; the new behaviour returns 'Fatek: brak znanych tagów (otrzymane: DataItem0)…' so that old test would now fail (expected change, not a bug)."
+  ],
+  "critical_code_review_comments": [
+    "fatek.convert: a message mixing valid tags with one short/bad tag is rejected entirely (valid tags not cached) – consistent and safe, just note for docs.",
+    "TTL is per-tag (60 s): PLCs that send some tags less often than every 60 s will be rejected; consider documenting in UI help that all required tags must be sent at least once per minute.",
+    "Cache is in-process memory – lost on backend restart (first partial message after restart is rejected until a full set arrives). Acceptable."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration34_fatek_cache_fixes.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "not tested (backend only requested)"},
+  "seed_data_creation": "Temporary device fatek34xxxx (TEST_Fatek34, client Ferma Kowalski) created/recreated and deleted at the end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run with: REACT_APP_BACKEND_URL=... pytest tests/test_iteration34_fatek_cache_fixes.py -n0 (sequential; ~85 s due to 62 s TTL wait). Each publish carries a unique ts marker and the test waits for that exact payload in /mqtt-debug last_message."
+}
