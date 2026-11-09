@@ -4,6 +4,6 @@ set -euo pipefail
 cd "$(dirname "$0")"
 git -C .. pull
 docker compose up -d --build
-bash ./tls-rsa.sh
+docker compose restart mosquitto >/dev/null
 docker image prune -f >/dev/null
 echo -e "\033[1;32m✔ Zaktualizowano. Dane zostały bez zmian.\033[0m"
