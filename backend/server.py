@@ -39,6 +39,7 @@ load_dotenv(ROOT_DIR / '.env')
 import auth  # noqa: E402
 import notify  # noqa: E402
 import techsheet  # noqa: E402
+import fatek  # noqa: E402
 from auth import require  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -439,6 +440,11 @@ class Gateway:
         except Exception:
             rec["error"] = "To nie jest poprawny JSON (UTF-8)"
             return
+        if fatek.is_fatek(data):
+            data, err = fatek.convert(data, device_id, DEVICES[device_id]["chambers"])
+            if err:
+                rec["error"] = err
+                return
         ping = self.pings.get(device_id)
         if ping and not ping.get("ack_ts") and isinstance(data, dict) and data.get("ack") == ping["request_id"]:
             ping["ack_ts"] = now_iso()
