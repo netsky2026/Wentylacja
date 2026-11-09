@@ -1,0 +1,25 @@
+{
+  "summary": "Tested to_flag normalisation of on/heating/mode and the chamber OFF hint. Backend: a temporary non-simulated 3-chamber Kowalski device got real MQTT messages via broker.hivemq.com with ch0 on:0/heating:0/mode:\"0\", ch1 on:\"1\"/heating:1/mode:\"1\", ch2 on:true/heating:\"0\"/mode:\"auto\". GET /api/devices returned ch0 on=false, heating=false, auto; ch1 on=true, heating=true, manual; ch2 on=true, heating=false, auto. set_mode returned 200 queued, an invalid value returned 422, and the to_flag unit test passed. New suite 7/7 passed; regression iteration34 (Fatek) plus iteration35 (NUL/JSON errors) passed, 28/28 total. UI at 390px with a background publisher every 2 s: chamber 0 AUTO/RĘCZNY buttons are disabled and chamber-0-off-hint shows the correct Polish text. Chambers 1 and 2 buttons are enabled with no hint. Clicking chamber-2-mode-manual sent POST /api/devices/flagui36/command {set_mode, chamber 2, manual}, which returned 200. Simulator kowalski-a end to end: chamber-0-mode-manual switched to manual (RĘCZNY active, sliders and auto-return note shown), then chamber-0-mode-auto switched back to auto. Cleanup done: only kowalski-a and chlodnia-01 remain, and kowalski-a ch0 mode is auto.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "to_flag", "issue": "Inconsistent: numeric 2 -> True but string \"2\" -> False (not in TRUE_WORDS). Also strings like \"off\"/\"auto\" are correctly false, but any unknown word silently means OFF/auto. Probably acceptable for PLC values; consider treating numeric strings via float(v) != 0."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Chamber screen (mobile 390)", "issues": ["chamber-N-off-hint is 11px muted text under the mode buttons. It is readable, but it is easy to miss because the chamber header already shows 'WYŁ.'. Optional: slightly larger or warn-colored text."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration36_to_flag.py", "/app/backend/tests/helpers_iter36_publisher.py", "/app/test_reports/pytest/pytest_iter36.xml"],
+  "action_items": ["Optional: make to_flag treat numeric strings consistently with numbers (\"2\" -> true)"],
+  "critical_code_review_comments": ["VentControl onClick guard duplicates the disabled attribute (harmless)", "server.py is ~2143 lines; split it into modules"],
+  "updated_files": ["/app/backend/tests/test_iteration36_to_flag.py", "/app/backend/tests/helpers_iter36_publisher.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary devices flag36xxxx (pytest fixture) and flagui36 (publisher helper) were created under client 6ad7dcc3261e5ba3c23315b7. Both were deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run pytest with '-n 0'. For UI tests on a non-simulated device, run helpers_iter36_publisher.py <dev_id> <seconds> with setsid nohup (a plain & job is killed by the tool timeout). Touch /tmp/stop_<dev_id> to stop it; it deletes the device on exit. The device picker uses data-testid=device-select (option value = device_id)."
+}

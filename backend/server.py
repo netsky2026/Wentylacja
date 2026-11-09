@@ -320,7 +320,11 @@ TRUE_WORDS = {"1", "true", "on", "tak", "yes", "manual", "man", "reczny", "ręcz
 def to_flag(v) -> bool:
     """PLC-friendly boolean: true/false, 0/1, "0"/"1", "auto"/"manual"."""
     if isinstance(v, str):
-        return v.strip().lower() in TRUE_WORDS
+        v = v.strip().lower()
+        try:
+            return float(v) != 0
+        except ValueError:
+            return v in TRUE_WORDS
     return bool(v) and not (isinstance(v, float) and not math.isfinite(v))
 
 
