@@ -158,3 +158,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Dostęp do ferm per użytkownik (users.client_ids; AccessCard dla superadmina; brak fermy = nic nie widzi; PUT /api/users/{id}/access). Iteracja 37: backend 100%, poprawiony branding dla wielu ferm, porównanie zaznaczeń niezależne od kolejności.
 - Kurtyny: wszędzie % OTWARCIA (wizualizacja, suwaki, wykresy, Excel/CSV, dziennik); kurtyna w wizualizacji zamyka się od dołu do góry.
 - Odwracanie kierunku kurtyn/komina (PLC_INVERT w settings.plc_scale.invert; domyślnie komin odwrócony: PLC 0 = otwarty). Odczyt 100−v, komendy odwracane z powrotem.
+- Kurtyny też domyślnie odwrócone (PLC wysyła % zamknięcia: 82 → 18% otwarcia).

@@ -330,7 +330,7 @@ def to_flag(v) -> bool:
 
 SCALE_FIELDS = NUM_FIELDS + CH_OPT_FIELDS + ("power_kw", "power_kwh")
 PLC_SCALE: dict = {f: (10 if f in ("temp", "setpoint") else 1) for f in SCALE_FIELDS}
-PLC_INVERT: dict = {"curtain_left": False, "curtain_right": False, "chimney": True}  # True: PLC sends % closed
+PLC_INVERT: dict = {"curtain_left": True, "curtain_right": True, "chimney": True}  # True: PLC sends % closed
 
 
 def unscale(p: dict) -> dict:
