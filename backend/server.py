@@ -1489,6 +1489,20 @@ async def put_auto_return(body: AutoReturnIn, client_id: Optional[str] = None, u
     return {"time": body.time}
 
 
+@api.post("/devices/{device_id}/reset-data")
+async def reset_device_data(device_id: str, user: dict = Depends(require("superadmin"))):
+    device_or_404(user, device_id)
+    n = 0
+    for coll in ("plc_history", "plc_plant_history", "plc_events", "meter_daily", "cycles", "mqtt_sent"):
+        n += (await db[coll].delete_many({"device_id": device_id})).deleted_count
+    await db.meter_last.delete_one({"_id": device_id})
+    for k in [k for k in alarm_active if k.startswith(f"{device_id}:")]:
+        alarm_active.pop(k)
+    await save_alarm_state()
+    await log_event("warning", f"{dev_label(device_id)}: wyczyszczono wszystkie dane (start od zera)", {"user": user["email"], "deleted": n}, device_id)
+    return {"ok": True, "deleted": n}
+
+
 @api.get("/plc-scale")
 async def get_plc_scale(user: dict = Depends(require("superadmin"))):
     return {**PLC_SCALE, "invert": PLC_INVERT}

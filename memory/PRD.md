@@ -159,3 +159,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Kurtyny: wszędzie % OTWARCIA (wizualizacja, suwaki, wykresy, Excel/CSV, dziennik); kurtyna w wizualizacji zamyka się od dołu do góry.
 - Odwracanie kierunku kurtyn/komina (PLC_INVERT w settings.plc_scale.invert; domyślnie komin odwrócony: PLC 0 = otwarty). Odczyt 100−v, komendy odwracane z powrotem.
 - Kurtyny też domyślnie odwrócone (PLC wysyła % zamknięcia: 82 → 18% otwarcia).
+- Przycisk „Wyczyść dane (start od zera)” przy sterowniku: POST /api/devices/{id}/reset-data (historia, zużycie, zdarzenia, cykle, alarmy, wysłane MQTT; ustawienia zostają). Potwierdzenie + wpisanie USUN.

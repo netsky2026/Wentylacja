@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload, QrCode, Activity, FileText } from "lucide-react";
+import { Building2, Cpu, Plus, Trash2, KeyRound, Copy, Palette, Upload, QrCode, Activity, FileText, Eraser } from "lucide-react";
 import { MqttDebugPanel } from "@/components/MqttDebugPanel";
 import { API, formatApiError, siteLogoUrl } from "@/api";
 import { QrDialog } from "@/components/QrDialog";
@@ -140,6 +140,10 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
     if (!window.confirm(`${t.confirmDeleteDevice} ${d.name}?`)) return;
     try { await axios.delete(`${API}/devices/${d.device_id}`); refresh(); } catch (e) { err(e); }
   };
+  const resetData = async (d) => {
+    if (!window.confirm(t.resetDataConfirm.replace("{d}", d.name)) || window.prompt(t.resetDataType) !== "USUN") return;
+    try { const { data } = await axios.post(`${API}/devices/${d.device_id}/reset-data`); toast.success(`${t.resetDataDone} (${data.deleted})`); reloadDevices?.(); } catch (e) { err(e); }
+  };
   const set = (k) => (e) => setF({ ...f, [k]: k === "simulated" ? e.target.checked : e.target.value });
 
   return (
@@ -162,9 +166,9 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
           </div>
           {brandOpen === c.id && <BrandEditor c={c} t={t} onChanged={refresh} site={site} />}
           {devices.filter((d) => d.client_id === c.id).map((d) => (<div key={d.device_id}>
-            <div className="flex items-center justify-between" style={{ padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 6 }}
+            <div className="flex flex-wrap items-center justify-between gap-2" style={{ padding: "6px 0", borderTop: "1px solid var(--border)", marginTop: 6 }}
               data-testid={`fleet-device-${d.device_id}`}>
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: "1 1 160px" }}>
                 <div className="flex items-center gap-1" style={{ fontSize: 12 }}><Cpu size={12} /> {d.name}
                   <span className={`led ${d.online ? "ok" : ""}`} style={{ marginLeft: 4, ...(d.online ? {} : { background: "var(--off)" }) }} /></div>
                 <div style={{ fontSize: 10, color: "var(--muted)" }}>{d.device_id} · {d.chambers} {t.chambersShort}{d.simulated ? ` · ${t.simulator}` : ""}</div>
@@ -182,6 +186,7 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
                 <a className="sp-btn" href={`${API}/devices/${d.device_id}/techsheet.pdf`} data-testid={`device-techsheet-${d.device_id}`}
                   title={t.techSheet} aria-label={t.techSheet}><FileText size={13} /></a>
                 <button className="sp-btn" onClick={() => showCreds(d)} data-testid={`device-creds-${d.device_id}`} aria-label="credentials"><KeyRound size={13} /></button>
+                <button className="sp-btn" onClick={() => resetData(d)} data-testid={`device-reset-${d.device_id}`} title={t.resetData} aria-label={t.resetData}><Eraser size={13} /></button>
                 <button className="sp-btn" onClick={() => delDevice(d)} data-testid={`device-delete-${d.device_id}`} aria-label="delete"><Trash2 size={13} /></button>
               </div>
             </div>
