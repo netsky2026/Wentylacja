@@ -330,12 +330,17 @@ def to_flag(v) -> bool:
 
 SCALE_FIELDS = NUM_FIELDS + CH_OPT_FIELDS + ("power_kw", "power_kwh")
 PLC_SCALE: dict = {f: (10 if f in ("temp", "setpoint") else 1) for f in SCALE_FIELDS}
+PLC_INVERT: dict = {"curtain_left": False, "curtain_right": False, "chimney": True}  # True: PLC sends % closed
 
 
 def unscale(p: dict) -> dict:
     """Real PLCs send integers ×10/×100 – divide per global PLC_SCALE."""
     p = copy.deepcopy(p)
-    div = lambda v, f: v / PLC_SCALE[f] if _num(v) else v
+    def div(v, f):
+        if not _num(v):
+            return v
+        v = v / PLC_SCALE[f]
+        return 100 - v if PLC_INVERT.get(f) else v
     for ch in p.get("chambers") or []:
         if isinstance(ch, dict):
             for f in NUM_FIELDS + CH_OPT_FIELDS:
@@ -354,7 +359,7 @@ def scale_cmd(cmd: dict) -> dict:
     if cmd["type"] == "set_setpoint":
         return {**cmd, "value": round(v * PLC_SCALE["setpoint"])}
     if cmd["type"] == "set_vent":
-        return {**cmd, "value": {k: round(x * PLC_SCALE[k]) for k, x in v.items()}}
+        return {**cmd, "value": {k: round((100 - x if PLC_INVERT[k] else x) * PLC_SCALE[k]) for k, x in v.items()}}
     return cmd
 
 
@@ -904,7 +909,9 @@ async def lifespan(app: FastAPI):
                                  partialFilterExpression={"active": True})
     await load_broker()
     await load_registry()
-    PLC_SCALE.update((await db.settings.find_one({"_id": "plc_scale"}) or {}).get("values", {}))
+    sc = await db.settings.find_one({"_id": "plc_scale"}) or {}
+    PLC_SCALE.update(sc.get("values", {}))
+    PLC_INVERT.update(sc.get("invert", {}))
     await db.plc_history.create_index([("device_id", 1), ("ts", 1)])
     await db.plc_plant_history.create_index([("device_id", 1), ("ts", 1)])
     await db.devices.create_index("device_id", unique=True)
@@ -1484,17 +1491,21 @@ async def put_auto_return(body: AutoReturnIn, client_id: Optional[str] = None, u
 
 @api.get("/plc-scale")
 async def get_plc_scale(user: dict = Depends(require("superadmin"))):
-    return PLC_SCALE
+    return {**PLC_SCALE, "invert": PLC_INVERT}
 
 
 @api.put("/plc-scale")
 async def put_plc_scale(body: dict, user: dict = Depends(require("superadmin"))):
+    inv = body.pop("invert", {})
+    if not isinstance(inv, dict) or set(inv) - set(PLC_INVERT) or any(type(v) is not bool for v in inv.values()):
+        raise HTTPException(422, "invert: tylko curtain_left, curtain_right, chimney (true/false)")
     if set(body) - set(SCALE_FIELDS) or any(type(v) is not int or v not in (1, 10, 100, 1000) for v in body.values()):
         raise HTTPException(422, "Dozwolone dzielniki: 1, 10, 100, 1000")
     PLC_SCALE.update(body)
-    await db.settings.update_one({"_id": "plc_scale"}, {"$set": {"values": PLC_SCALE}}, upsert=True)
-    await log_event("info", "Zmieniono przeliczanie wartości ze sterowników", {"user": user["email"], **body})
-    return PLC_SCALE
+    PLC_INVERT.update(inv)
+    await db.settings.update_one({"_id": "plc_scale"}, {"$set": {"values": PLC_SCALE, "invert": PLC_INVERT}}, upsert=True)
+    await log_event("info", "Zmieniono przeliczanie wartości ze sterowników", {"user": user["email"], **body, "invert": inv})
+    return {**PLC_SCALE, "invert": PLC_INVERT}
 
 
 @api.post("/admin/auto-reset")

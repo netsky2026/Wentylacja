@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Divide } from "lucide-react";
 import { API } from "@/api";
 
+const VENT = ["curtain_left", "curtain_right", "chimney"];
 const FIELDS = ["temp", "setpoint", "humidity", "co2", "curtain_left", "curtain_right", "chimney", "water_lpm", "water_total_l", "power_kw", "power_kwh"];
 
 export const PlcScaleCard = ({ t }) => {
@@ -30,6 +31,18 @@ export const PlcScaleCard = ({ t }) => {
             <option value={1000}>÷1000</option>
           </select>
         </div>
+      ))}
+      <div style={{ fontSize: 12, fontWeight: 700, marginTop: 12 }}>{t.invertTitle}</div>
+      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>{t.invertHint}</div>
+      {VENT.map((f) => (
+        <label key={f} className="flex items-center justify-between" style={{ fontSize: 13, padding: "4px 0", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
+          <span>{t.scaleNames[f]}</span>
+          <span className="flex items-center gap-2" style={{ fontSize: 11, color: "var(--muted)" }}>
+            {s.invert?.[f] ? t.invertOn : t.invertOff}
+            <input type="checkbox" checked={!!s.invert?.[f]} data-testid={`plc-invert-${f}`} style={{ accentColor: "var(--primary)", width: 18, height: 18 }}
+              onChange={(e) => setS({ ...s, invert: { ...s.invert, [f]: e.target.checked } })} />
+          </span>
+        </label>
       ))}
       <button className="action-btn" onClick={save} data-testid="plc-scale-save" style={{ width: "100%", padding: 9, marginTop: 10, fontSize: 13 }}>{t.save}</button>
     </div>
