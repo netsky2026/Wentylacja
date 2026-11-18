@@ -130,6 +130,11 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
     } catch (e) { err(e); }
   };
   const toggleSim = async (d) => { try { await axios.patch(`${API}/devices/${d.device_id}`, { simulated: !d.simulated }); refresh(); } catch (e) { err(e); } };
+  const moveDevice = async (d, client_id) => {
+    const c = clients.find((x) => x.id === client_id);
+    if (!c || !window.confirm(t.moveConfirm.replace("{d}", d.name).replace("{c}", c.name))) return;
+    try { await axios.patch(`${API}/devices/${d.device_id}`, { client_id }); toast.success(t.saved); refresh(); reloadDevices?.(); } catch (e) { err(e); }
+  };
   const showCreds = async (d) => { try { setCreds((await axios.get(`${API}/devices/${d.device_id}/credentials`)).data); } catch (e) { err(e); } };
   const delDevice = async (d) => {
     if (!window.confirm(`${t.confirmDeleteDevice} ${d.name}?`)) return;
@@ -163,6 +168,11 @@ export const FleetCard = ({ t, reloadDevices, site }) => {
                 <div className="flex items-center gap-1" style={{ fontSize: 12 }}><Cpu size={12} /> {d.name}
                   <span className={`led ${d.online ? "ok" : ""}`} style={{ marginLeft: 4, ...(d.online ? {} : { background: "var(--off)" }) }} /></div>
                 <div style={{ fontSize: 10, color: "var(--muted)" }}>{d.device_id} · {d.chambers} {t.chambersShort}{d.simulated ? ` · ${t.simulator}` : ""}</div>
+                {clients.length > 1 && <select className="num-input" value="" onChange={(e) => moveDevice(d, e.target.value)}
+                  data-testid={`device-move-${d.device_id}`} style={{ fontSize: 10, padding: "2px 4px", marginTop: 3, width: "auto", maxWidth: 150 }}>
+                  <option value="">{t.moveTo}</option>
+                  {clients.filter((x) => x.id !== c.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>}
               </div>
               <div className="flex gap-1">
                 <button className="sp-btn" title={t.simulator} onClick={() => toggleSim(d)} data-testid={`device-sim-${d.device_id}`}

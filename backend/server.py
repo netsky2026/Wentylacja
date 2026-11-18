@@ -1004,6 +1004,7 @@ class DeviceIn(BaseModel):
 class DevicePatch(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     simulated: Optional[bool] = None
+    client_id: Optional[str] = None
 
 
 class Recipient(BaseModel):
@@ -1409,9 +1410,18 @@ async def device_credentials(device_id: str, user: dict = Depends(require("super
 @api.patch("/devices/{device_id}")
 async def patch_device(device_id: str, body: DevicePatch, user: dict = Depends(require("superadmin"))):
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    old = DEVICES.get(device_id)
+    if "client_id" in upd:
+        if not ObjectId.is_valid(upd["client_id"]) or not await db.clients.find_one({"_id": ObjectId(upd["client_id"])}):
+            raise HTTPException(422, "Unknown client")
     res = await db.devices.update_one({"device_id": device_id}, {"$set": upd})
     if not res.matched_count:
         raise HTTPException(404, "Device not found")
+    if old and upd.get("client_id") and upd["client_id"] != old["client_id"]:
+        await db.plc_events.update_many({"device_id": device_id}, {"$set": {"client_id": upd["client_id"]}})
+        await load_registry()
+        await log_event("info", f"Przeniesiono sterownik {dev_label(device_id)} z fermy {old['client_name']}",
+                        {"user": user["email"]}, device_id)
     await load_registry()
     sims.sync()
     return device_view(device_id, user)

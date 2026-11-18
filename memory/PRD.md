@@ -154,3 +154,4 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - MqttSendBox.jsx w MqttDebugPanel: pole tematu, JSON, potwierdzenie, historia z ponownym wysłaniem
 - Technik: Fatek oczekuje wartości integer (np. setpoint_x10 = 220). Format komend sterowania nadal do ustalenia (BLOCKED).
 - Globalne przeliczanie wartości ze sterowników (PlcScaleCard, GET/PUT /api/plc-scale, db.settings plc_scale). Domyślnie temp i setpoint ÷10. Tylko prawdziwe sterowniki (nie symulatory, nie format Fatek "d"). Komendy set_setpoint/set_vent mnożone i zaokrąglane do integer.
+- Przenoszenie sterownika do innej fermy (PATCH /api/devices/{id} {client_id}; FleetCard select „Przenieś do fermy…”), zdarzenia sterownika przenoszone razem z nim.
