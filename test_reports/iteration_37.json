@@ -1,0 +1,35 @@
+{
+  "summary": "Tested multi-farm user access (client_ids), the superadmin AccessCard, farm-admin scoping across 2 farms, client-delete cascade, and regressions (PlcScaleCard, MQTT send box, device move). Backend: new suite test_iteration37_farm_access.py passed 12/12. It covered: a user with no farm sees no devices, gets 200 from events and 404 on commands; an operator with 2 farms sees kowalski-a and chlodnia-01 and both set_mode commands return 200; a viewer gets 403; PUT /users/{id}/access saves role and client_ids with client_id = first id; invalid, malformed, duplicate or superadmin-role values return 422; a superadmin target or unknown id returns 404; a non-superadmin gets 403; GET /users?client_id filters correctly; a farm admin with 2 farms reaches auto-return, rates, client-contact, alarm-settings and users for each farm; a farm admin cannot delete a user who also has another farm (403); deleting a throwaway client deletes its only-farm user and strips it from a 2-farm user; plc-scale validation and round-trip work; mqtt-send rejects bad JSON and records history; device move round-trips and an unknown client returns 422. Auth checks: bcrypt $2b$, httpOnly cookies, CORS with an explicit origin and credentials. UI at 390px: access-card lists the users; access-save appears only when something changes and disappears again when the change is reverted; a new account with no farm gets the 'Brak zaznaczonej fermy' hint, and after login it shows 'Brak przypisanych sterowników' with every tab working and no JS errors; after ticking 2 farms and saving, device-select lists both devices and mode manual/auto commands return 200 on each; the viewer has no mode buttons; for the farm admin, Settings sends client_id = the selected device's farm on all 6 farm-level cards and the cards switch correctly between farms; PlcScaleCard save round-trip works; the MQTT send box shows a JSON error with send disabled, then a confirm dialog, then a sent toast, then history item 0; device-move to Kowalski and back works with confirm dialogs. Cleanup done: no TEST users left, devices are in their original farms, PLC scale is at defaults.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/clients/{id}", "issue": "Deletes users whose only farm was the deleted client, without any warning to the superadmin. The FleetCard confirm text (confirmDeleteClient) does not say that accounts will be removed. This matches the spec but is destructive; consider listing the affected users in the confirm or response."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App.js branding (line ~161)", "issue": "For non-superadmin users with several farms, brandClient = user.client_id (always the first farm). The header app name, theme and logo stay on the first farm even when the user picks a device from the second farm. Seen: test_ui37_admin with farms [KOW, MP] viewing chlodnia-01 still shows 'Kowalski Wentylacja' and Kowalski's theme. The backend /api/branding already accepts client_id for any farm in user.client_ids. Fix: brandClient = dev?.client_id || user.client_id and always send ?client_id.", "selector": "header app name", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AccessCard", "issues": ["The dirty check compares ids.join() in order. Ticking the same farms in a different order (e.g. uncheck then recheck) shows Save even though nothing changed, and saving reorders client_ids, which changes the primary client_id. Compare sorted arrays instead.", "Load errors are swallowed silently. A failed /users or /clients call shows an empty card with no error state.", "Long emails are cut off at 390px (kowalski.admin@k…), with no title tooltip."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration37_farm_access.py", "/app/test_reports/pytest/pytest_iter37.xml"],
+  "action_items": [
+    "App.js: base branding on the selected device's client_id for multi-farm admin/operator/viewer users, not on user.client_id",
+    "AccessCard: order-insensitive dirty check; preserve the original order or let the user choose the primary farm",
+    "Optional: warn in the client-delete confirm that users with only this farm will be deleted"
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~2249 lines; split it into routers (clients, devices, mqtt, plc-scale, alarms)",
+    "mqtt-send lets a superadmin publish to any topic, including other devices' command topics. This is acceptable for superadmin but is not limited to the device prefix.",
+    "UsersCard (farm admin) creates users with a single client_id. Multi-farm assignment is superadmin-only by design; a farm admin cannot see that a user also belongs to other farms until deleting returns 403."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration37_farm_access.py"],
+  "success_rate": {"backend": "100%", "frontend": "95% (1 branding bug for multi-farm users)"},
+  "seed_data_creation": "Temporary users test_*_<tag>@example.com (pytest), test_ui37_nofarm/viewer/admin@example.com (UI), and client TEST_Farm_<tag>. All deleted. Remaining users: admin@chlewnia.pl, kowalski.admin@kowalski.pl. Devices are in their original farms. PLC scale is temp 10, setpoint 10, everything else 1.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with '-n 0'. Send the Origin header on mutations. In browser_automation, 'import asyncio' is needed for the dialog handler. Logout between users with page.context.clear_cookies() plus localStorage.clear(), then goto the URL again. AccessCard testids use the email: access-row-<email>, access-farm-<email>-<clientId>."
+}

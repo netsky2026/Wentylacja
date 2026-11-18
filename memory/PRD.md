@@ -155,3 +155,5 @@ Termostat z histerezą, auto-chłodzenie, ręczne rozmrażanie, alarm gdy temp >
 - Technik: Fatek oczekuje wartości integer (np. setpoint_x10 = 220). Format komend sterowania nadal do ustalenia (BLOCKED).
 - Globalne przeliczanie wartości ze sterowników (PlcScaleCard, GET/PUT /api/plc-scale, db.settings plc_scale). Domyślnie temp i setpoint ÷10. Tylko prawdziwe sterowniki (nie symulatory, nie format Fatek "d"). Komendy set_setpoint/set_vent mnożone i zaokrąglane do integer.
 - Przenoszenie sterownika do innej fermy (PATCH /api/devices/{id} {client_id}; FleetCard select „Przenieś do fermy…”), zdarzenia sterownika przenoszone razem z nim.
+- Dostęp do ferm per użytkownik (users.client_ids; AccessCard dla superadmina; brak fermy = nic nie widzi; PUT /api/users/{id}/access). Iteracja 37: backend 100%, poprawiony branding dla wielu ferm, porównanie zaznaczeń niezależne od kolejności.
+- Kurtyny: wszędzie % OTWARCIA (wizualizacja, suwaki, wykresy, Excel/CSV, dziennik); kurtyna w wizualizacji zamyka się od dołu do góry.

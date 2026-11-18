@@ -23,7 +23,7 @@ const FarmChecks = ({ clients, value, onChange, testid }) => (
 const UserRow = ({ u, t, clients, me, onChanged }) => {
   const [role, setRole] = useState(u.role);
   const [ids, setIds] = useState(u.client_ids || []);
-  const dirty = role !== u.role || ids.join() !== (u.client_ids || []).join();
+  const dirty = role !== u.role || [...ids].sort().join() !== [...(u.client_ids || [])].sort().join();
   const save = async () => {
     try { await axios.put(`${API}/users/${u.id}/access`, { role, client_ids: ids }); toast.success(t.saved); onChanged(); }
     catch (e) { toast.error(t.saveFailed); }
@@ -39,7 +39,7 @@ const UserRow = ({ u, t, clients, me, onChanged }) => {
   return (
     <div className="reg-cell" style={{ padding: "8px 10px" }} data-testid={`access-row-${u.email}`}>
       <div className="flex items-center gap-2">
-        <div style={{ fontSize: 12, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</div>
+        <div title={u.email} style={{ fontSize: 12, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</div>
         <select className="num-input" value={role} onChange={(e) => setRole(e.target.value)} data-testid={`access-role-${u.email}`} style={{ fontSize: 11, width: 120, padding: "3px 6px" }}>
           {ROLES.map((r) => <option key={r} value={r}>{t[RK[r]]}</option>)}
         </select>
@@ -60,7 +60,7 @@ export const AccessCard = ({ t, me }) => {
     try {
       const [u, c] = await Promise.all([axios.get(`${API}/users`), axios.get(`${API}/clients`)]);
       setUsers(u.data.users); setClients(c.data.clients || c.data);
-    } catch (e) { /* ignore */ }
+    } catch (e) { toast.error(t.saveFailed); }
   }, []);
   useEffect(() => { load(); }, [load]);
   const add = async () => {

@@ -1,6 +1,7 @@
-// Window with a roller blind; closed% = 100 - open%
+// Window with a curtain rising from the bottom; shows % open
 export const CurtainWindow = ({ open, label, testid, scale = 1 }) => {
-  const closed = Math.round(100 - (open ?? 0));
+  const o = Math.round(open ?? 0);
+  const closed = 100 - o;
   return (
     <div className="flex flex-col items-center" data-testid={testid} style={{ gap: 4 }}>
       <div className="win-frame" style={{ width: 54 * scale, height: 64 * scale }}>
@@ -13,7 +14,7 @@ export const CurtainWindow = ({ open, label, testid, scale = 1 }) => {
         </div>
         <div className="win-box" />
       </div>
-      <span className="font-head" data-testid={`${testid}-value`} style={{ fontSize: 14 * scale, fontWeight: 700 }}>{closed}%</span>
+      <span className="font-head" data-testid={`${testid}-value`} style={{ fontSize: 14 * scale, fontWeight: 700 }}>{o}%</span>
       <span style={{ fontSize: 10 + scale, color: "var(--muted)" }}>{label}</span>
     </div>
   );

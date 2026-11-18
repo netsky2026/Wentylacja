@@ -1528,9 +1528,9 @@ async def device_command(device_id: str, cmd: CommandIn, user: dict = Depends(re
     elif cmd.type == "set_mode":
         msg = f"{name}: tryb {'RĘCZNY' if cmd.value == 'manual' else 'AUTO'}"
     elif cmd.type == "set_vent":
-        lbl = {"curtain_left": "kurtyna L zamkn.", "curtain_right": "kurtyna P zamkn.", "chimney": "komin otw."}
+        lbl = {"curtain_left": "kurtyna L otw.", "curtain_right": "kurtyna P otw.", "chimney": "komin otw."}
         msg = f"{name}: " + ", ".join(
-            f"{lbl[k]} {round(100 - x) if k != 'chimney' else round(x)}%" for k, x in cmd.value.items())
+            f"{lbl[k]} {round(x)}%" for k, x in cmd.value.items())
     else:
         msg = f"{name}: {'włączona' if cmd.value else 'wyłączona'}"
     await log_event("command", msg, {**body, "user": user["email"]}, device_id)
@@ -2117,12 +2117,11 @@ async def history_xlsx(device_id: str, chamber: int, hours: int = 24, user: dict
         raise HTTPException(404, "unknown chamber")
     hours = max(1, min(24 * 31, hours))
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    rows = [["Czas", "Temperatura °C", "Wilgotność %", "CO₂ ppm", "Kurtyna L zamkn. %", "Kurtyna P zamkn. %", "Komin otw. %"]]
+    rows = [["Czas", "Temperatura °C", "Wilgotność %", "CO₂ ppm", "Kurtyna L otw. %", "Kurtyna P otw. %", "Komin otw. %"]]
     async for doc in db.plc_history.find({"device_id": device_id, "chamber": chamber, "ts": {"$gte": since}}, {"_id": 0}).sort("ts", 1):
         cl, cr = doc.get("curtain_left"), doc.get("curtain_right")
         rows.append([datetime.fromisoformat(doc["ts"]).astimezone(PL_TZ).strftime("%Y-%m-%d %H:%M:%S"), doc.get("temp"),
-                     doc.get("humidity"), doc.get("co2"), None if cl is None else round(100 - cl, 1),
-                     None if cr is None else round(100 - cr, 1), doc.get("chimney")])
+                     doc.get("humidity"), doc.get("co2"), cl, cr, doc.get("chimney")])
     title = ch_name(device_id, chamber)[:31].translate(str.maketrans("[]:*?/\\", "       "))
     fname = f"{device_id}_komora{chamber + 1}_{hours}h_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return file_response(await asyncio.to_thread(xlsx_bytes, [(title, rows, {"A": 20, "B": 15, "C": 14, "D": 10, "E": 18, "F": 18, "G": 13})],
@@ -2142,13 +2141,12 @@ async def history_csv(device_id: str, chamber: int, hours: int = 24, user: dict 
     fmt = csv_cell
 
     async def gen():
-        yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_zamkn_%;kurtyna_P_zamkn_%;komin_otw_%\n"
+        yield "\ufeffczas;temperatura_C;wilgotnosc_%;co2_ppm;kurtyna_L_otw_%;kurtyna_P_otw_%;komin_otw_%\n"
         async for doc in cursor:
             cl, cr = doc.get("curtain_left"), doc.get("curtain_right")
             ts = datetime.fromisoformat(doc["ts"]).astimezone(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M:%S")
             yield ";".join([ts, fmt(doc.get("temp")), fmt(doc.get("humidity")), fmt(doc.get("co2")),
-                            fmt(None if cl is None else round(100 - cl, 1)),
-                            fmt(None if cr is None else round(100 - cr, 1)), fmt(doc.get("chimney"))]) + "\n"
+                            fmt(cl), fmt(cr), fmt(doc.get("chimney"))]) + "\n"
 
     fname = f"{device_id}_komora{chamber + 1}_{hours}h_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
     return StreamingResponse(gen(), media_type="text/csv; charset=utf-8",

@@ -141,7 +141,7 @@ Bramka **wysyła** co 1–5 s na temat `PREFIX/ID_STEROWNIKA/state` (JSON):
  "plant":{"power_kw":3.2,"power_kwh":1520.4,"water_lpm":2.1,"water_total_l":45210}}
 ```
 - `chambers` – dokładnie tyle komór, ile ustawiono przy sterowniku (`id` od 0).
-- `curtain_left/right`, `chimney` – **% otwarcia** (aplikacja pokazuje kurtyny jako % zamknięcia).
+- `curtain_left/right`, `chimney` – **% otwarcia**.
 - Opcjonalnie w każdej komorze: `water_total_l` – **stan wodomierza komory** (litry, licznik narastający) i `water_lpm` – przepływ l/min.
   `plant.power_kwh` – stan licznika prądu (kWh, narastający). Z tych liczników aplikacja liczy zużycie dzienne, w okresie chowu i w dowolnym zakresie dat.
 

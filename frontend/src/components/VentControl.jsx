@@ -19,8 +19,8 @@ export const VentControl = ({ ch, t, send, autoReturn }) => {
   const [cr, setCr] = useState(0);
   const [cc, setCc] = useState(0);
   useEffect(() => {
-    setCl(Math.round(100 - (m.curtain_left ?? ch.curtain_left)));
-    setCr(Math.round(100 - (m.curtain_right ?? ch.curtain_right)));
+    setCl(Math.round(m.curtain_left ?? ch.curtain_left));
+    setCr(Math.round(m.curtain_right ?? ch.curtain_right));
     setCc(Math.round(m.chimney ?? ch.chimney));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ch.id, ch.mode, m.curtain_left, m.curtain_right, m.chimney]);
@@ -47,8 +47,8 @@ export const VentControl = ({ ch, t, send, autoReturn }) => {
       </div>
       {manual && ch.on && (
         <div className="fade-in">
-          <Row label={`${t.curtainLeft} (${t.closedPct})`} value={cl} onChange={setCl} onCommit={(v) => vent("curtain_left", 100 - v)} testid={`chamber-${ch.id}-slider-curtain-left`} />
-          <Row label={`${t.curtainRight} (${t.closedPct})`} value={cr} onChange={setCr} onCommit={(v) => vent("curtain_right", 100 - v)} testid={`chamber-${ch.id}-slider-curtain-right`} />
+          <Row label={`${t.curtainLeft} (${t.openPct})`} value={cl} onChange={setCl} onCommit={(v) => vent("curtain_left", v)} testid={`chamber-${ch.id}-slider-curtain-left`} />
+          <Row label={`${t.curtainRight} (${t.openPct})`} value={cr} onChange={setCr} onCommit={(v) => vent("curtain_right", v)} testid={`chamber-${ch.id}-slider-curtain-right`} />
           <Row label={`${t.chimney} (${t.openPct})`} value={cc} onChange={setCc} onCommit={(v) => vent("chimney", v)} testid={`chamber-${ch.id}-slider-chimney`} />
           <div style={{ fontSize: 10, color: "var(--muted)" }}>{t.manualHint}</div>
         </div>

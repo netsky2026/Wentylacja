@@ -74,7 +74,7 @@ Lista `chambers` musi zawierać **dokładnie tyle komór, ile ma sterownik** (`i
 | `setpoint` | °C | TAK | nastawa |
 | `humidity` | % RH | TAK | wilgotność |
 | `co2` | ppm | TAK | CO₂ |
-| `curtain_left`, `curtain_right` | % **otwarcia** 0–100 | TAK | kurtyny (panel pokazuje % zamknięcia = 100 − wartość) |
+| `curtain_left`, `curtain_right` | % **otwarcia** 0–100 | TAK | kurtyny (panel pokazuje % otwarcia, kurtyna zamyka się od dołu) |
 | `chimney` | % otwarcia 0–100 | TAK | komin |
 | `water_lpm` | l/min | nie | przepływ wody komory |
 | `water_total_l` | litry, **licznik narastający** | zalecane | woda komory – do zużycia i kosztów rzutów |

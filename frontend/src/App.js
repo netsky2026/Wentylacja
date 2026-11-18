@@ -158,10 +158,10 @@ function Dashboard({ t, lang, setLang, user, onLogout, onUserChange, site, reloa
     return () => clearInterval(hh);
   }, [devId, loadHistory, loadThresholds]);
 
-  const brandClient = user.role === "superadmin" ? dev?.client_id : user.client_id;
+  const brandClient = dev?.client_id || user.client_id;
   const loadBrand = useCallback(() => {
     if (user.role === "superadmin" && !brandClient) return;
-    const q = user.role === "superadmin" && brandClient ? `?client_id=${brandClient}` : "";
+    const q = brandClient ? `?client_id=${brandClient}` : "";
     axios.get(`${API}/branding${q}`).then(({ data }) => setBrand({ ...data, loaded: true })).catch(() => {});
   }, [user.role, brandClient]);
   useEffect(() => { loadBrand(); }, [loadBrand]);

@@ -94,8 +94,7 @@ const EventLog = ({ t, events }) => {
 export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events, dev, isSuper }) => {
   const raw = history[String(ch?.id)];
   const data = useMemo(() => (raw || []).map((d) => ({
-    ...d, cl_closed: d.curtain_left == null ? null : 100 - d.curtain_left,
-    cr_closed: d.curtain_right == null ? null : 100 - d.curtain_right,
+    ...d,
   })), [raw]);
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="data-view">
@@ -109,7 +108,7 @@ export const DataView = ({ t, ch, deviceId, plant, history, plantHistory, events
       <Chart t={t} title={t.historyHum} data={data} lines={[["humidity", "var(--c-water)", t.humidity]]} testid="chart-humidity" domain={[0, 100]} />
       <Chart t={t} title={t.historyCo2} data={data} lines={[["co2", "var(--c-co2)", t.co2]]} testid="chart-co2" />
       <Chart t={t} title={t.historyVent} data={data} testid="chart-vent" domain={[0, 100]}
-        lines={[["cl_closed", "var(--c-cl)", t.curtainLeft], ["cr_closed", "var(--c-cr)", t.curtainRight], ["chimney", "var(--c-chim)", t.chimney]]} />
+        lines={[["curtain_left", "var(--c-cl)", t.curtainLeft], ["curtain_right", "var(--c-cr)", t.curtainRight], ["chimney", "var(--c-chim)", t.chimney]]} />
       <Chart t={t} title={t.historyPlant} data={plantHistory} testid="chart-plant"
         lines={[["power_kw", "var(--c-power)", `${t.power} kW`], ["water_lpm", "var(--c-water)", `${t.water} l/min`]]} />
 
