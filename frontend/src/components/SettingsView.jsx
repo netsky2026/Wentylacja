@@ -12,6 +12,7 @@ import { FleetCard } from "@/components/FleetCard";
 import { ChamberNameEdit } from "@/components/ChamberNameEdit";
 import { SiteCard } from "@/components/SiteCard";
 import { PlcScaleCard } from "@/components/PlcScaleCard";
+import { AccessCard } from "@/components/AccessCard";
 import { Minus, Plus, Bell, BellOff, Check } from "lucide-react";
 
 const ChamberSettings = ({ ch, th, t, send, saveThreshold, dev, canRename, onRenamed }) => {
@@ -66,10 +67,11 @@ const ChamberSettings = ({ ch, th, t, send, saveThreshold, dev, canRename, onRen
 export const SettingsView = ({ t, chambers, thresholds, send, saveThreshold, notifPerm, requestNotif, config, onConfigSaved,
   user, onLogout, canControl, dev, reloadDevices, onUserChange, clientTheme, site, reloadSite }) => {
   const isAdmin = user.role === "admin" || user.role === "superadmin";
-  const clientId = user.role === "superadmin" ? dev?.client_id : undefined;
+  const clientId = dev?.client_id;
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="settings-view">
       <AccountCard t={t} user={user} onLogout={onLogout} onUserChange={onUserChange} clientTheme={clientTheme} />
+      {user.role === "superadmin" && <AccessCard t={t} me={user} />}
       {user.role === "superadmin" && <FleetCard t={t} reloadDevices={reloadDevices} site={site} />}
       {canControl && dev && chambers.length > 0 && <>
         <div className="font-head" style={{ fontSize: 13, color: "var(--muted)" }}>{t.thresholds} / {t.setpoint} · {dev.client_name} · {dev.name}</div>

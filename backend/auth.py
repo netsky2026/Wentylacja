@@ -1,7 +1,7 @@
 import os
 import secrets
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import List, Optional
 
 import bcrypt
 import jwt
@@ -58,9 +58,15 @@ async def session_revoked(sid: Optional[str]) -> bool:
     return bool(sid) and await db.revoked_sessions.find_one({"_id": sid}) is not None
 
 
+def user_clients(u: dict) -> list:
+    if "client_ids" in u:
+        return list(u["client_ids"] or [])
+    return [u["client_id"]] if u.get("client_id") else []
+
+
 def public_user(u: dict) -> dict:
     return {"id": str(u["_id"]), "email": u["email"], "name": u.get("name", ""), "role": u["role"],
-            "client_id": u.get("client_id"), "theme": u.get("theme")}
+            "client_id": u.get("client_id"), "client_ids": user_clients(u), "theme": u.get("theme")}
 
 
 async def user_from_token(token: Optional[str], kind: str = "access") -> Optional[dict]:
@@ -114,6 +120,12 @@ class UserIn(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     role: str = Field(pattern=r"^(viewer|operator|admin|superadmin)$")
     client_id: Optional[str] = None
+    client_ids: Optional[List[str]] = None
+
+
+class AccessIn(BaseModel):
+    role: str = Field(pattern=r"^(viewer|operator|admin)$")
+    client_ids: List[str] = Field(max_length=200)
 
 
 router = APIRouter(prefix="/api")
@@ -186,7 +198,7 @@ async def change_password(body: PasswordIn, response: Response, user: dict = Dep
 
 
 def _user_scope(actor: dict) -> dict:
-    return {} if actor["role"] == "superadmin" else {"client_id": actor.get("client_id")}
+    return {} if actor["role"] == "superadmin" else {"client_ids": {"$in": user_clients(actor)}}
 
 
 THEMES = ("green", "light", "blue", "amber")
@@ -206,8 +218,8 @@ async def set_preferences(body: PrefsIn, user: dict = Depends(get_current_user))
 @router.get("/users")
 async def list_users(client_id: Optional[str] = None, actor: dict = Depends(require("admin"))):
     q = _user_scope(actor)
-    if actor["role"] == "superadmin" and client_id:
-        q = {"client_id": client_id}
+    if client_id and (actor["role"] == "superadmin" or client_id in user_clients(actor)):
+        q = {"client_ids": client_id}
     now = datetime.now(timezone.utc)
     locked = {a["identifier"] async for a in db.login_attempts.find({"count": {"$gte": MAX_ATTEMPTS}})
               if a["last"].replace(tzinfo=timezone.utc) > now - timedelta(minutes=LOCK_MIN)}
@@ -227,21 +239,38 @@ async def unlock_user(user_id: str, actor: dict = Depends(require("admin"))):
 async def create_user(body: UserIn, actor: dict = Depends(require("admin"))):
     email = body.email.strip().lower()
     if actor["role"] == "superadmin":
-        client_id = None if body.role == "superadmin" else body.client_id
-        if body.role != "superadmin" and (not client_id or not ObjectId.is_valid(client_id)
-                                          or not await db.clients.find_one({"_id": ObjectId(client_id)})):
-            raise HTTPException(422, "Valid client_id required")
+        ids = [] if body.role == "superadmin" else (body.client_ids if body.client_ids is not None else [body.client_id] if body.client_id else [])
+        await _check_clients(ids)
     else:
         if body.role == "superadmin":
             raise HTTPException(403, "Insufficient permissions")
-        client_id = actor.get("client_id")
+        mine = user_clients(actor)
+        ids = [body.client_id if body.client_id in mine else mine[0]] if mine else []
+    client_id = ids[0] if ids else None
     if await db.users.find_one({"email": email}):
         raise HTTPException(409, "User already exists")
-    doc = {"email": email, "name": body.name.strip(), "role": body.role, "client_id": client_id,
+    doc = {"email": email, "name": body.name.strip(), "role": body.role, "client_id": client_id, "client_ids": ids,
            "password_hash": hash_password(body.password), "created_at": datetime.now(timezone.utc)}
     res = await db.users.insert_one(doc)
     doc["_id"] = res.inserted_id
     return public_user(doc)
+
+
+async def _check_clients(ids: list):
+    if len(set(ids)) != len(ids) or any(not ObjectId.is_valid(i) for i in ids) or \
+            await db.clients.count_documents({"_id": {"$in": [ObjectId(i) for i in ids]}}) != len(ids):
+        raise HTTPException(422, "Unknown farm")
+
+
+@router.put("/users/{user_id}/access")
+async def set_access(user_id: str, body: AccessIn, actor: dict = Depends(require("superadmin"))):
+    target = await db.users.find_one({"_id": ObjectId(user_id)}) if ObjectId.is_valid(user_id) else None
+    if not target or target["role"] == "superadmin":
+        raise HTTPException(404, "User not found")
+    await _check_clients(body.client_ids)
+    await db.users.update_one({"_id": target["_id"]}, {"$set": {"role": body.role, "client_ids": body.client_ids,
+                                                                "client_id": body.client_ids[0] if body.client_ids else None}})
+    return public_user(await db.users.find_one({"_id": target["_id"]}))
 
 
 @router.delete("/users/{user_id}")
@@ -253,6 +282,8 @@ async def delete_user(user_id: str, actor: dict = Depends(require("admin"))):
     target = await db.users.find_one({"_id": ObjectId(user_id), **_user_scope(actor)})
     if not target or (target["role"] == "superadmin" and actor["role"] != "superadmin"):
         raise HTTPException(404, "User not found")
+    if actor["role"] != "superadmin" and set(user_clients(target)) - set(user_clients(actor)):
+        raise HTTPException(403, "Użytkownik ma dostęp do innych ferm – usuń go w panelu superadmina")
     await db.users.delete_one({"_id": target["_id"]})
     return {"ok": True}
 
@@ -262,6 +293,8 @@ async def setup():
     await db.login_attempts.create_index("identifier")
     await db.login_attempts.create_index("last", expireAfterSeconds=LOCK_MIN * 60)
     await db.revoked_sessions.create_index("exp", expireAfterSeconds=0)
+    async for u in db.users.find({"client_ids": {"$exists": False}}):
+        await db.users.update_one({"_id": u["_id"]}, {"$set": {"client_ids": [u["client_id"]] if u.get("client_id") else []}})
     email = os.environ["ADMIN_EMAIL"].strip().lower()
     pw = os.environ["ADMIN_PASSWORD"]
     u = await db.users.find_one({"email": email})

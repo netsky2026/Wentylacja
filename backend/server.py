@@ -564,7 +564,7 @@ sims = SimManager()
 
 async def broadcast(data: dict, client_id: Optional[str]):
     for ws, user in list(gateway.ws_clients.items()):
-        if user["role"] != "superadmin" and user.get("client_id") != client_id:
+        if user["role"] != "superadmin" and client_id not in auth.user_clients(user):
             continue
         try:
             await ws.send_json(data)
@@ -747,7 +747,7 @@ async def ws_revalidator():
         await asyncio.sleep(30)
         for ws, u in list(gateway.ws_clients.items()):
             cur = await db.users.find_one({"_id": u["_id"]})
-            if (not cur or any(cur.get(k) != u.get(k) for k in ("role", "client_id", "tv"))
+            if (not cur or any(cur.get(k) != u.get(k) for k in ("role", "client_ids", "tv"))
                     or await auth.session_revoked(u.get("_sid"))):
                 gateway.ws_clients.pop(ws, None)
                 try:
@@ -930,7 +930,7 @@ api = APIRouter(prefix="/api")
 # ============================================================
 def visible(user: dict, device_id: str) -> bool:
     d = DEVICES.get(device_id)
-    return bool(d) and (user["role"] == "superadmin" or d["client_id"] == user.get("client_id"))
+    return bool(d) and (user["role"] == "superadmin" or d["client_id"] in auth.user_clients(user))
 
 
 def device_or_404(user: dict, device_id: str) -> dict:
@@ -944,7 +944,12 @@ def client_scope(user: dict, client_id: Optional[str]) -> str:
         if not client_id or not ObjectId.is_valid(client_id):
             raise HTTPException(422, "client_id required")
         return client_id
-    return user.get("client_id")
+    uc = auth.user_clients(user)
+    if client_id in uc:
+        return client_id
+    if not uc:
+        raise HTTPException(403, "Brak dostępu do fermy")
+    return uc[0]
 
 
 def device_view(device_id: str, user: dict) -> dict:
@@ -1159,7 +1164,7 @@ async def delete_logo(client_id: str, user: dict = Depends(require("superadmin")
 
 @api.get("/clients/{client_id}/logo")
 async def get_logo(client_id: str, user: dict = Depends(require("viewer"))):
-    if user["role"] != "superadmin" and user.get("client_id") != client_id:
+    if user["role"] != "superadmin" and client_id not in auth.user_clients(user):
         raise HTTPException(404, "Not found")
     c = await client_or_404(client_id)
     if not c.get("logo_path"):
@@ -1331,7 +1336,7 @@ async def put_site(body: SiteIn, user: dict = Depends(require("superadmin"))):
 
 @api.get("/branding")
 async def branding(client_id: Optional[str] = None, user: dict = Depends(require("viewer"))):
-    cid = client_id if user["role"] == "superadmin" else user.get("client_id")
+    cid = client_id if user["role"] == "superadmin" or client_id in auth.user_clients(user) else user.get("client_id")
     c = await db.clients.find_one({"_id": ObjectId(cid)}) if cid and ObjectId.is_valid(cid) else None
     if not c:
         return {"client_id": None, "app_name": None, "theme": "green", "logo_version": None}
@@ -1348,7 +1353,12 @@ async def delete_client(client_id: str, user: dict = Depends(require("superadmin
     res = await db.clients.delete_one({"_id": ObjectId(client_id)})
     if not res.deleted_count:
         raise HTTPException(404, "Client not found")
-    await db.users.delete_many({"client_id": client_id})
+    async for u in db.users.find({"$or": [{"client_id": client_id}, {"client_ids": client_id}]}):
+        rest = [c for c in auth.user_clients(u) if c != client_id]
+        if rest or u.get("client_id") != client_id:
+            await db.users.update_one({"_id": u["_id"]}, {"$set": {"client_ids": rest, "client_id": rest[0] if rest else None}})
+        else:
+            await db.users.delete_one({"_id": u["_id"]})
     await db.alarm_settings.delete_one({"_id": client_id})
     return {"ok": True}
 
@@ -1754,7 +1764,7 @@ async def send_monthly_report(client_id: str, force: bool = False) -> dict:
     if not force and await db.monthly_reports.find_one({"_id": key}):
         return {"skipped": True}
     devs = [k for k, v in DEVICES.items() if v["client_id"] == client_id]
-    to = [u["email"] async for u in db.users.find({"client_id": client_id, "role": "admin"})]
+    to = [u["email"] async for u in db.users.find({"client_ids": client_id, "role": "admin"})]
     if not devs or not to:
         return {"sent": 0, "recipients": to}
     files = tuple([(f"zuzycie_{dv}_{a[:7]}.xlsx", await usage_xlsx(dv, a, b)) for dv in devs])
@@ -1803,7 +1813,7 @@ async def monthly_report_now(client_id: Optional[str] = None, user: dict = Depen
 @api.get("/monthly-report")
 async def monthly_report_get(client_id: Optional[str] = None, user: dict = Depends(require("admin"))):
     c = await client_or_404(client_scope(user, client_id))
-    to = [u["email"] async for u in db.users.find({"client_id": str(c["_id"]), "role": "admin"})]
+    to = [u["email"] async for u in db.users.find({"client_ids": str(c["_id"]), "role": "admin"})]
     return {"enabled": c.get("monthly_report", True), "recipients": to, "period": prev_month()}
 
 
@@ -2147,7 +2157,7 @@ async def history_csv(device_id: str, chamber: int, hours: int = 24, user: dict 
 
 @api.get("/events")
 async def events(device_id: Optional[str] = None, limit: int = 100, user: dict = Depends(require("viewer"))):
-    q: dict = {} if user["role"] == "superadmin" else {"client_id": user.get("client_id")}
+    q: dict = {} if user["role"] == "superadmin" else {"client_id": {"$in": auth.user_clients(user)}}
     if device_id:
         d = device_or_404(user, device_id)
         q = {"client_id": d["client_id"], "$or": [{"device_id": device_id}, {"device_id": None}]}
